@@ -1,15 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "POE Guide Vault Import Format",
+  "title": "POE Guide Vault Import Format v2",
   "type": "object",
   "required": ["format", "guides"],
   "properties": {
-    "format": { "const": "poe-guide-v1" },
-    "guides": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/guide" }
-    }
+    "format": { "const": "poe-guide-v2" },
+    "guides": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/guide" } }
   },
   "additionalProperties": false,
   "$defs": {
@@ -18,20 +14,11 @@
       "required": ["id", "title", "version", "archetype", "updated", "pob", "source", "stages"],
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-        "title": { "type": "string" },
-        "version": { "type": "string" },
-        "archetype": { "type": "string" },
+        "title": { "type": "string" }, "version": { "type": "string" }, "archetype": { "type": "string" },
         "updated": { "type": "string", "pattern": "^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
-        "pob": { "type": "string" },
-        "source": { "type": "string" },
-        "stages": {
-          "type": "array",
-          "minItems": 7,
-          "maxItems": 7,
-          "items": { "$ref": "#/$defs/stage" }
-        }
-      },
-      "additionalProperties": false
+        "pob": { "type": "string" }, "source": { "type": "string" },
+        "stages": { "type": "array", "minItems": 7, "maxItems": 7, "items": { "$ref": "#/$defs/stage" } }
+      }, "additionalProperties": false
     },
     "stage": {
       "type": "object",
@@ -39,40 +26,28 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
         "name": { "enum": ["總覽", "劇情", "初入輿圖", "低預算", "中預算", "高預算", "終局"] },
-        "summary": { "type": "string" },
-        "goals": { "type": "array", "items": { "type": "string" } },
+        "summary": { "type": "string" }, "goals": { "type": "array", "items": { "type": "string" } },
         "conditions": { "type": "array", "items": { "type": "string" } },
-        "skills": {
-          "type": "array",
-          "items": {
-            "type": "array",
-            "items": { "$ref": "#/$defs/skill" }
-          }
-        },
+        "skills": { "type": "array", "items": { "$ref": "#/$defs/skillGroup" } },
         "gear": { "type": "array", "items": { "$ref": "#/$defs/gear" } },
-        "notes": { "type": "string" },
-        "image": { "type": "string" }
-      },
-      "additionalProperties": false
+        "notes": { "type": "string" }, "image": { "type": "string" }
+      }, "additionalProperties": false
+    },
+    "skillGroup": {
+      "type": "object", "required": ["id", "slot", "label", "gems"],
+      "properties": {
+        "id": { "type": "string" }, "slot": { "type": "string" }, "label": { "type": "string" },
+        "gems": { "type": "array", "items": { "$ref": "#/$defs/skill" } }
+      }, "additionalProperties": false
     },
     "skill": {
-      "type": "object",
-      "required": ["name", "color"],
-      "properties": {
-        "name": { "type": "string" },
-        "color": { "enum": ["blue", "red", "green"] }
-      },
+      "type": "object", "required": ["name", "color"],
+      "properties": { "name": { "type": "string" }, "color": { "enum": ["blue", "red", "green"] } },
       "additionalProperties": false
     },
     "gear": {
-      "type": "object",
-      "required": ["slot", "current", "next", "note"],
-      "properties": {
-        "slot": { "type": "string" },
-        "current": { "type": "string" },
-        "next": { "type": "string" },
-        "note": { "type": "string" }
-      },
+      "type": "object", "required": ["slot", "current", "next", "note"],
+      "properties": { "slot": { "type": "string" }, "current": { "type": "string" }, "next": { "type": "string" }, "note": { "type": "string" } },
       "additionalProperties": false
     }
   }
