@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- guide images are user-pasted data URLs */
 
 import { ChangeEvent, ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import ConverterWorkbench from "./ConverterWorkbench";
 
 type Skill = { name: string; color: "blue" | "red" | "green" };
 type ChecklistItem = { id: string; text: string; required?: boolean; unlockMessage?: string };
@@ -54,6 +55,7 @@ export default function Home() {
   const [stageId, setStageId] = useState("overview");
   const [editing, setEditing] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showConverter, setShowConverter] = useState(false);
   const [pendingImport, setPendingImport] = useState<Guide[] | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>( {} );
@@ -130,6 +132,7 @@ export default function Home() {
       <header className="topbar">
         <button className="brand" onClick={() => setShowLibrary(true)}><span className="brand-mark">◇</span><span>流亡攻略庫</span></button>
         <div className="top-actions">
+          <button className="ghost converter-trigger" onClick={() => setShowConverter(true)}>攻略轉換</button>
           <button className="ghost" onClick={() => fileRef.current?.click()}>匯入</button><input ref={fileRef} type="file" accept="application/json" hidden onChange={importData}/>
           <button className="ghost" onClick={exportData}>匯出</button>
           <button className={editing ? "primary active" : "primary"} onClick={() => setEditing(v => !v)}>{editing ? "完成編輯" : "編輯模式"}</button>
@@ -211,6 +214,7 @@ export default function Home() {
 
       {showLibrary && <div className="modal-backdrop" onMouseDown={()=>setShowLibrary(false)}><section className="modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><small>MY BUILD LIBRARY</small><h2>選擇攻略</h2></div><button onClick={()=>setShowLibrary(false)}>×</button></div><div className="guide-grid">{guides.map(g=><div className="guide-card" key={g.id}><button className="guide-open" onClick={()=>{setGuideId(g.id);setStageId(g.stages[0].id);setShowLibrary(false)}}><span className="guide-version">{g.version}</span><strong>{g.title}</strong><small>{g.archetype}</small><i>{g.stages.length} 個階段</i></button><div className="guide-actions"><button onClick={()=>duplicateGuide(g)}>複製</button><button className="danger" onClick={()=>deleteGuide(g.id)}>刪除</button></div></div>)}<button className="add-card" onClick={newGuide}><strong>＋</strong><span>建立空白攻略</span></button></div></section></div>}
       {pendingImport && <div className="modal-backdrop"><section className="modal import-modal"><div className="modal-head"><div><small>IMPORT GUIDES</small><h2>匯入 {pendingImport.length} 份攻略</h2></div><button onClick={()=>setPendingImport(null)}>×</button></div><p>選擇如何處理目前攻略庫。建議一般新增流派使用「新增」，更新既有攻略使用「依 ID 合併」。</p><div className="import-options"><button onClick={()=>applyImport("add")}><strong>新增攻略</strong><span>保留全部現有攻略；重複 ID 會建立副本。</span></button><button onClick={()=>applyImport("merge")}><strong>依 ID 合併</strong><span>同 ID 更新，不同 ID 新增。</span></button><button className="danger-zone" onClick={()=>confirm("確定以匯入檔取代全部現有攻略？")&&applyImport("replace")}><strong>取代全部</strong><span>刪除現有攻略並完全採用匯入檔。</span></button></div></section></div>}
+      <ConverterWorkbench open={showConverter} onClose={() => setShowConverter(false)}/>
     </main>
   );
 }
