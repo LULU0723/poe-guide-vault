@@ -1,0 +1,23 @@
+{
+  "format": "poe-guide-v1",
+  "guides": [
+    {
+      "id": "example-minion-329",
+      "title": "範例召喚流派",
+      "version": "3.29",
+      "archetype": "死靈師 · 召喚物",
+      "updated": "2026-07-19",
+      "pob": "",
+      "source": "個人整理範例",
+      "stages": [
+        { "id": "overview", "name": "總覽", "summary": "展示攻略庫格式的最小範例。", "goals": ["確認流派核心機制"], "conditions": [], "skills": [[{ "name": "召喚物傷害輔助", "color": "blue" }]], "gear": [], "notes": "" },
+        { "id": "campaign", "name": "劇情", "summary": "原攻略未提供此階段的獨立配置。", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+        { "id": "early-maps", "name": "初入輿圖", "summary": "原攻略未提供此階段的獨立配置。", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+        { "id": "low-budget", "name": "低預算", "summary": "原攻略未提供此階段的獨立配置。", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+        { "id": "medium-budget", "name": "中預算", "summary": "原攻略未提供此階段的獨立配置。", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+        { "id": "high-budget", "name": "高預算", "summary": "原攻略未提供此階段的獨立配置。", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+        { "id": "endgame", "name": "終局", "summary": "原攻略未提供此階段的獨立配置。", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" }
+      ]
+    }
+  ]
+}
