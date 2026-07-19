@@ -4,22 +4,39 @@
 import { ChangeEvent, ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Skill = { name: string; color: "blue" | "red" | "green" };
-type SkillGroup = { id: string; slot: string; label: string; gems: Skill[] };
-type Gear = { slot: string; current: string; next: string; note: string };
+type ChecklistItem = { id: string; text: string; required?: boolean; unlockMessage?: string };
+type Variant = { id: string; name: string; description: string };
+type SkillSwap = { id: string; remove: string; add: string; when: string; variantIds?: string[] };
+type SkillGroup = { id: string; slot: string; label: string; gems: Skill[]; variantIds?: string[] };
+type Gear = { slot: string; current: string; next: string; note: string; variantIds?: string[] };
+type Spectre = { id: string; name: string; count: number; role: string; acquisition: string; replaces: string; variantIds?: string[] };
+type Warning = { id: string; severity: "info" | "warning" | "danger"; category: string; title: string; localizedText: string; recommendation: string; sourceText?: string };
+type Progression = { id: string; type: "ascendancy" | "passive" | "anointment" | "tattoo"; name: string; detail: string };
+type GuideSection = { id: string; type: "craft" | "map-mods" | "mechanic" | "faq" | "playstyle" | "bossing"; title: string; content: string };
 type Stage = {
-  id: string; name: string; summary: string; goals: string[]; conditions: string[];
-  skills: SkillGroup[]; gear: Gear[]; notes: string; image?: string;
+  id: string; name: string; summary: string; goals: ChecklistItem[]; conditions: ChecklistItem[];
+  skills: SkillGroup[]; swaps: SkillSwap[]; gear: Gear[]; spectres: Spectre[]; warnings: Warning[];
+  progression: Progression[]; sections: GuideSection[]; notes: string; image?: string;
 };
-type Guide = { id: string; title: string; version: string; archetype: string; updated: string; pob: string; source: string; stages: Stage[] };
+type Guide = { id: string; title: string; version: string; archetype: string; updated: string; pob: string; source: string; pros: string[]; cons: string[]; coreMechanics: string[]; requiredItems: string[]; recommendedItems: string[]; variants: Variant[]; stages: Stage[] };
 
 const stageNames = ["總覽", "劇情", "初入輿圖", "低預算", "中預算", "高預算", "終局"];
 const uid = () => Math.random().toString(36).slice(2, 9);
-const progressKey = (guideId: string, stageId: string, kind: "goal" | "condition", text: string, occurrence = 0) => `${guideId}-${stageId}-${kind}-${encodeURIComponent(text.trim())}-${occurrence}`;
-const normalizeGuide = (input: Guide): Guide => ({ ...input, stages: (input.stages || []).map(stage => ({ ...stage, goals: stage.goals || [], conditions: stage.conditions || [], gear: stage.gear || [], notes: stage.notes || "", skills: (stage.skills || []).map((group, index) => Array.isArray(group) ? { id: uid(), slot: index === 0 ? "胸甲" : "未指定", label: index === 0 ? "主力技能" : `技能組 ${index + 1}`, gems: group as Skill[] } : { id: group.id || uid(), slot: group.slot || "未指定", label: group.label || `技能組 ${index + 1}`, gems: group.gems || [] }) })) });
-const emptyStage = (name: string, i: number): Stage => ({ id: `stage-${i}`, name, summary: "點擊編輯模式，填寫這個階段的目標。", goals: [], conditions: [], skills: [], gear: [], notes: "" });
+const normalizeChecks = (items: Array<string | ChecklistItem> = []) => items.map(item => typeof item === "string" ? { id: uid(), text: item, required: true } : { ...item, id: item.id || uid(), text: item.text || "" });
+const normalizeGuide = (input: Guide): Guide => ({
+  ...input,
+  pros: input.pros || [], cons: input.cons || [], coreMechanics: input.coreMechanics || [], requiredItems: input.requiredItems || [], recommendedItems: input.recommendedItems || [], variants: input.variants || [],
+  stages: (input.stages || []).map(stage => ({ ...stage,
+    goals: normalizeChecks(stage.goals as unknown as Array<string | ChecklistItem>), conditions: normalizeChecks(stage.conditions as unknown as Array<string | ChecklistItem>),
+    gear: stage.gear || [], swaps: stage.swaps || [], spectres: stage.spectres || [], warnings: stage.warnings || [], progression: stage.progression || [], sections: stage.sections || [], notes: stage.notes || "",
+    skills: (stage.skills || []).map((group, index) => Array.isArray(group) ? { id: uid(), slot: index === 0 ? "胸甲" : "未指定", label: index === 0 ? "主力技能" : `技能組 ${index + 1}`, gems: group as Skill[] } : { ...group, id: group.id || uid(), slot: group.slot || "未指定", label: group.label || `技能組 ${index + 1}`, gems: group.gems || [] })
+  }))
+});
+const emptyStage = (name: string, i: number): Stage => ({ id: `stage-${i}`, name, summary: "點擊編輯模式，填寫這個階段的目標。", goals: [], conditions: [], skills: [], swaps: [], gear: [], spectres: [], warnings: [], progression: [], sections: [], notes: "" });
 
 const starterGuide: Guide = normalizeGuide({
-  id: "carrion-329", title: "毒食腐魔像＋殭屍", version: "3.29", archetype: "死靈師 · 混沌毒傷", updated: "2026-07-19", pob: "", source: "Helm Breaker / Maxroll",
+  id: "carrion-329", title: "毒食腐魔像＋殭屍", version: "3.29", archetype: "死靈師 · 混沌毒傷", updated: "2026-07-20", pob: "", source: "Helm Breaker / Maxroll",
+  pros:["單體與防禦表現穩定","能從拓荒逐步投資到終局"], cons:["早期清圖較依賴召集","需要管理中毒機率與輔助幽魂"], coreMechanics:["召喚物物理轉混沌並疊加中毒","取得額外魔像上限後轉食腐魔像．清洗"], requiredItems:["六連核心胸甲"], recommendedItems:["聚魂石","高品質深淵珠寶"], variants:[{id:"bone-offering",name:"骸骨奉獻格擋版",description:"偏向防禦與格擋。"},{id:"late-svalinn",name:"斯瓦林終局版",description:"終局高防禦分支。"}],
   stages: [
     { id:"overview", name:"總覽", summary:"以赦免完成劇情，進入輿圖後逐步轉成食腐魔像與殭屍共同輸出的毒／混沌召喚流。", goals:["用赦免穩定完成劇情與前期輿圖","準備召喚物中毒、嘲諷與生命偷取珠寶","依裝備進度切換部落／清洗食腐魔像"], conditions:["召喚物中毒機率最終達到 100%","主力召喚寶石優先取得 21/0","抗性超過上限 15% 以抵銷曝曬"], skills:[[{name:"召喚食腐魔像．清洗",color:"blue"},{name:"多重打擊輔助",color:"red"},{name:"召喚物傷害輔助",color:"blue"},{name:"虛空操縱輔助",color:"green"}]], gear:[{slot:"胸甲",current:"稀有六連",next:"冥使之體",note:"核心混沌傷害來源"},{slot:"腰帶",current:"稀有冥河腰帶",next:"夜惡降臨",note:"放入兩顆優質蒼白之凝"}], notes:"召喚物寶石等級通常比品質重要；21/0 優先於 20/20。" },
     { id:"campaign", name:"劇情", summary:"使用赦免作為主力，食腐魔像、殭屍與幽魂提供輔助。", goals:["完成三次昇華試煉","抗性接近 75%","保留高等級召喚物寶石"], conditions:["取得兩隻激怒酋長作為輔助幽魂","準備一件便宜六連胸甲"], skills:[[{name:"瓦爾赦免",color:"blue"},{name:"物理轉閃電輔助",color:"blue"},{name:"施法迴響輔助",color:"blue"},{name:"召喚物傷害輔助",color:"blue"}]], gear:[{slot:"武器",current:"召喚物法杖",next:"＋1召喚物技能法杖",note:"不要犧牲抗性與生命"},{slot:"鞋子",current:"生命／抗性鞋",next:"烏勒爾之骨",note:"價格合理再買"}], notes:"第二章舊田野取得激怒酋長。" },
@@ -39,6 +56,7 @@ export default function Home() {
   const [showLibrary, setShowLibrary] = useState(false);
   const [pendingImport, setPendingImport] = useState<Guide[] | null>(null);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>( {} );
   const [ready, setReady] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -49,21 +67,24 @@ export default function Home() {
     try {
       const saved = localStorage.getItem("poe-guide-vault");
       const progress = localStorage.getItem("poe-guide-progress");
+      const variants = localStorage.getItem("poe-guide-variants");
       if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length) { const normalized = parsed.map(normalizeGuide); setGuides(normalized); setGuideId(normalized[0].id); setStageId(normalized[0].stages[0].id); } }
       if (progress) setChecked(JSON.parse(progress));
+      if (variants) setSelectedVariants(JSON.parse(variants));
     } catch { /* keep starter data */ }
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
   useEffect(() => { if (ready) localStorage.setItem("poe-guide-vault", JSON.stringify(guides)); }, [guides, ready]);
   useEffect(() => { if (ready) localStorage.setItem("poe-guide-progress", JSON.stringify(checked)); }, [checked, ready]);
+  useEffect(() => { if (ready) localStorage.setItem("poe-guide-variants", JSON.stringify(selectedVariants)); }, [selectedVariants, ready]);
 
   const guide = guides.find(g => g.id === guideId) ?? guides[0];
   const stage = guide?.stages.find(s => s.id === stageId) ?? guide?.stages[0];
   const progress = useMemo(() => {
     if (!guide) return 0;
     const keys = guide.stages.flatMap(s => [
-      ...s.goals.map((item, i, all) => progressKey(guide.id, s.id, "goal", item, all.slice(0, i).filter(x => x === item).length)),
-      ...s.conditions.map((item, i, all) => progressKey(guide.id, s.id, "condition", item, all.slice(0, i).filter(x => x === item).length)),
+      ...s.goals.map(item => `${guide.id}-${s.id}-goal-${item.id}`),
+      ...s.conditions.map(item => `${guide.id}-${s.id}-condition-${item.id}`),
     ]);
     return keys.length ? Math.round(keys.filter(k => checked[k]).length / keys.length * 100) : 0;
   }, [guide, checked]);
@@ -71,9 +92,12 @@ export default function Home() {
   const patchGuide = (patch: Partial<Guide>) => setGuides(gs => gs.map(g => g.id === guide.id ? { ...g, ...patch } : g));
   const patchStage = (patch: Partial<Stage>) => patchGuide({ stages: guide.stages.map(s => s.id === stage.id ? { ...s, ...patch } : s) });
   const textList = (value: string) => value.split("\n").map(x => x.trim()).filter(Boolean);
+  const patchChecks = (kind: "goals" | "conditions", value: string) => { const existing = stage[kind]; const next = textList(value).map((text, i) => existing[i]?.text === text ? existing[i] : { id: uid(), text, required: true }); patchStage({ [kind]: next }); };
+  const activeVariant = selectedVariants[guide.id] || "";
+  const applies = (variantIds?: string[]) => !variantIds?.length || !activeVariant || variantIds.includes(activeVariant);
 
   const exportData = () => {
-    const blob = new Blob([JSON.stringify({ format:"poe-guide-v2", guides }, null, 2)], { type:"application/json" });
+    const blob = new Blob([JSON.stringify({ format:"poe-guide-v3", guides }, null, 2)], { type:"application/json" });
     const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `poe-guides-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url);
   };
   const importData = (e: ChangeEvent<HTMLInputElement>) => {
@@ -89,7 +113,7 @@ export default function Home() {
     setGuides(result); setGuideId(result[0].id); setStageId(result[0].stages[0].id); setPendingImport(null);
   };
   const newGuide = () => {
-    const id = uid(); const fresh: Guide = { id, title:"未命名攻略", version:"3.29", archetype:"尚未設定流派", updated:new Date().toISOString().slice(0,10), pob:"", source:"", stages:stageNames.map(emptyStage) };
+    const id = uid(); const fresh: Guide = { id, title:"未命名攻略", version:"3.29", archetype:"尚未設定流派", updated:new Date().toISOString().slice(0,10), pob:"", source:"", pros:[], cons:[], coreMechanics:[], requiredItems:[], recommendedItems:[], variants:[], stages:stageNames.map(emptyStage) };
     setGuides(gs => [...gs, fresh]); setGuideId(id); setStageId(fresh.stages[0].id); setShowLibrary(false); setEditing(true);
   };
   const deleteGuide = (id: string) => { if (guides.length === 1) { alert("攻略庫至少需要保留一份攻略。"); return; } const target = guides.find(g => g.id === id); if (!target || !confirm(`確定刪除「${target.title}」？此動作無法復原。`)) return; const next = guides.filter(g => g.id !== id); setGuides(next); if (guideId === id) { setGuideId(next[0].id); setStageId(next[0].stages[0].id); } };
@@ -114,7 +138,7 @@ export default function Home() {
 
       <aside className="sidebar">
         <div className="guide-switcher"><span className="eyebrow">目前攻略</span><button onClick={() => setShowLibrary(true)}>{guide.title}<span>⌄</span></button></div>
-        <nav aria-label="攻略階段">{guide.stages.map((s, i) => <button key={s.id} className={s.id===stage.id?"stage active":"stage"} onClick={() => setStageId(s.id)}><span className="stage-number">{String(i).padStart(2,"0")}</span><span>{s.name}</span><i>{s.goals.filter((item,x,all)=>checked[progressKey(guide.id,s.id,"goal",item,all.slice(0,x).filter(v=>v===item).length)]).length}/{s.goals.length}</i></button>)}</nav>
+        <nav aria-label="攻略階段">{guide.stages.map((s, i) => <button key={s.id} className={s.id===stage.id?"stage active":"stage"} onClick={() => setStageId(s.id)}><span className="stage-number">{String(i).padStart(2,"0")}</span><span>{s.name}</span><i>{s.goals.filter(item=>checked[`${guide.id}-${s.id}-goal-${item.id}`]).length}/{s.goals.length}</i></button>)}</nav>
         <button className="new-guide" onClick={newGuide}>＋ 新增攻略</button>
       </aside>
 
@@ -123,25 +147,54 @@ export default function Home() {
           <div>{editing ? <><input className="title-input" value={guide.title} onChange={e=>patchGuide({title:e.target.value})}/><input className="meta-input" value={guide.archetype} onChange={e=>patchGuide({archetype:e.target.value})}/></> : <><div className="title-line"><h1>{guide.title}</h1><span className="version">{guide.version}</span></div><p>{guide.archetype}　·　來源：{guide.source || "個人整理"}</p></>}</div>
           <div className="progress"><div className="progress-ring" style={{"--p":`${progress*3.6}deg`} as React.CSSProperties}><span>{progress}%</span></div><div><small>目前階段</small><strong>{stage.name}</strong></div></div>
         </div>
+        {(guide.variants.length > 0 || editing) && <div className="variant-bar"><div><small>配置方案</small>{editing ? <button className="inline-button" onClick={()=>patchGuide({variants:[...guide.variants,{id:`variant-${uid()}`,name:"新方案",description:""}]})}>＋ 新增方案</button> : <select value={activeVariant} onChange={e=>setSelectedVariants(v=>({...v,[guide.id]:e.target.value}))}><option value="">顯示共通配置</option>{guide.variants.map(v=><option value={v.id} key={v.id}>{v.name}</option>)}</select>}</div>{guide.variants.map((v,i)=>editing?<div className="variant-edit" key={v.id}><input value={v.name} aria-label="方案名稱" onChange={e=>patchGuide({variants:guide.variants.map((x,n)=>n===i?{...x,name:e.target.value}:x)})}/><input value={v.description} aria-label="方案說明" onChange={e=>patchGuide({variants:guide.variants.map((x,n)=>n===i?{...x,description:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchGuide({variants:guide.variants.filter((_,n)=>n!==i)})}>刪除</button></div>:activeVariant===v.id?<p key={v.id}>{v.description}</p>:null)}</div>}
         <div className="timeline">{guide.stages.map((s,i)=><button key={s.id} className={s.id===stage.id?"active":""} onClick={()=>setStageId(s.id)}><span>{i < stageIndex ? "✓" : i+1}</span>{s.name}</button>)}</div>
 
         <div className="dashboard">
+          {stageIndex===0&&<article className="card overview-card"><div className="card-heading"><span className="icon">◇</span><div><small>BUILD OVERVIEW</small><h2>流派速覽</h2></div></div>
+            {editing?<div className="overview-editor"><label>核心機制<textarea value={guide.coreMechanics.join("\n")} onChange={e=>patchGuide({coreMechanics:textList(e.target.value)})}/></label><label>優點<textarea value={guide.pros.join("\n")} onChange={e=>patchGuide({pros:textList(e.target.value)})}/></label><label>缺點<textarea value={guide.cons.join("\n")} onChange={e=>patchGuide({cons:textList(e.target.value)})}/></label><label>必要物品<textarea value={guide.requiredItems.join("\n")} onChange={e=>patchGuide({requiredItems:textList(e.target.value)})}/></label><label>建議物品<textarea value={guide.recommendedItems.join("\n")} onChange={e=>patchGuide({recommendedItems:textList(e.target.value)})}/></label></div>:<div className="overview-columns"><section><h3>核心機制</h3>{guide.coreMechanics.map(x=><p key={x}>{x}</p>)}</section><section><h3 className="good">優點</h3>{guide.pros.map(x=><p key={x}>＋ {x}</p>)}</section><section><h3 className="bad">缺點</h3>{guide.cons.map(x=><p key={x}>－ {x}</p>)}</section><section><h3>必要／建議物品</h3>{guide.requiredItems.map(x=><p key={x}><b>必要</b> {x}</p>)}{guide.recommendedItems.map(x=><p key={x}><span>建議</span> {x}</p>)}</section></div>}
+          </article>}
           <article className="card goals-card"><div className="card-heading"><span className="icon">◎</span><div><small>STEP {stageIndex+1}</small><h2>目前目標</h2></div></div>
-            {editing ? <><textarea value={stage.summary} onChange={e=>patchStage({summary:e.target.value})}/><label className="field-label">每行一個目標</label><textarea value={stage.goals.join("\n")} onChange={e=>patchStage({goals:textList(e.target.value)})}/></> : <><p className="summary">{stage.summary}</p><ul className="checklist">{stage.goals.map((g,i,all)=>{const k=progressKey(guide.id,stage.id,"goal",g,all.slice(0,i).filter(v=>v===g).length);return <li key={k}><label><input type="checkbox" checked={!!checked[k]} onChange={()=>setChecked(c=>({...c,[k]:!c[k]}))}/><span>{g}</span></label></li>})}</ul></>}
+            {editing ? <><textarea value={stage.summary} onChange={e=>patchStage({summary:e.target.value})}/><label className="field-label">每行一個目標</label><textarea value={stage.goals.map(x=>x.text).join("\n")} onChange={e=>patchChecks("goals",e.target.value)}/></> : <><p className="summary">{stage.summary}</p><ul className="checklist">{stage.goals.map(g=>{const k=`${guide.id}-${stage.id}-goal-${g.id}`;return <li key={k}><label><input type="checkbox" checked={!!checked[k]} onChange={()=>setChecked(c=>({...c,[k]:!c[k]}))}/><span>{g.text}</span></label></li>})}</ul></>}
           </article>
 
           <article className="card conditions-card"><div className="card-heading"><span className="icon">✓</span><div><small>READY CHECK</small><h2>轉型條件</h2></div></div>
-            {editing ? <><label className="field-label">每行一個條件</label><textarea value={stage.conditions.join("\n")} onChange={e=>patchStage({conditions:textList(e.target.value)})}/></> : <ul className="checklist">{stage.conditions.map((g,i,all)=>{const k=progressKey(guide.id,stage.id,"condition",g,all.slice(0,i).filter(v=>v===g).length);return <li key={k}><label><input type="checkbox" checked={!!checked[k]} onChange={()=>setChecked(c=>({...c,[k]:!c[k]}))}/><span>{g}</span></label></li>})}</ul>}
-            <div className="condition-score"><strong>{stage.conditions.filter((item,i,all)=>checked[progressKey(guide.id,stage.id,"condition",item,all.slice(0,i).filter(v=>v===item).length)]).length}<span> / {stage.conditions.length}</span></strong><small>符合條件</small></div>
+            {editing ? <><label className="field-label">每行一個條件</label><textarea value={stage.conditions.map(x=>x.text).join("\n")} onChange={e=>patchChecks("conditions",e.target.value)}/>{stage.conditions.map((g,i)=><div className="unlock-edit" key={g.id}><span>{g.text}</span><input placeholder="完成後提示（選填）" value={g.unlockMessage||""} onChange={e=>patchStage({conditions:stage.conditions.map((x,n)=>n===i?{...x,unlockMessage:e.target.value}:x)})}/></div>)}</> : <><ul className="checklist">{stage.conditions.map(g=>{const k=`${guide.id}-${stage.id}-condition-${g.id}`;return <li key={k}><label><input type="checkbox" checked={!!checked[k]} onChange={()=>setChecked(c=>({...c,[k]:!c[k]}))}/><span>{g.text}</span></label>{checked[k]&&g.unlockMessage&&<p className="unlock-message">✓ {g.unlockMessage}</p>}</li>})}</ul></>}
+            <div className="condition-score"><strong>{stage.conditions.filter(item=>checked[`${guide.id}-${stage.id}-condition-${item.id}`]).length}<span> / {stage.conditions.length}</span></strong><small>符合條件</small></div>
           </article>
 
           <article className="card skills-card"><div className="card-heading"><span className="icon">⌁</span><div><small>GEM LINKS BY ITEM</small><h2>技能連線</h2></div></div>
-            {stage.skills.length ? stage.skills.map((group,i)=><div className="skill-group" key={group.id}><div className="skill-group-head">{editing?<><input value={group.slot} aria-label="裝備部位" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,slot:e.target.value}:x)})}/><input value={group.label} aria-label="技能組名稱" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,label:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchStage({skills:stage.skills.filter((_,n)=>n!==i)})}>刪除技能組</button></>:<><strong>{group.slot}</strong><span>{group.label}</span></>}</div><div className="gems">{group.gems.map((s,x)=>editing?<span className="gem-edit" key={x}><select value={s.color} onChange={e=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.map((gem,gi)=>gi===x?{...gem,color:e.target.value as Skill["color"]}:gem)}:row)})}><option value="blue">藍</option><option value="red">紅</option><option value="green">綠</option></select><input value={s.name} onChange={e=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.map((gem,gi)=>gi===x?{...gem,name:e.target.value}:gem)}:row)})}/><button aria-label={`移除 ${s.name}`} onClick={()=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.filter((_,gi)=>gi!==x)}:row)})}>×</button></span>:<span className={`gem ${s.color}`} key={x}><i>{s.color==="blue"?"B":s.color==="red"?"R":"G"}</i>{s.name}</span>)}</div>{editing&&<button className="inline-button" onClick={()=>patchStage({skills:stage.skills.map((row,n)=>n===i?{...row,gems:[...row.gems,{name:"新寶石",color:"blue"}]}:row)})}>＋ 新增寶石</button>}</div>) : <p className="empty">尚未填寫技能連線。</p>}
+            {stage.skills.length ? stage.skills.map((group,i)=>({group,i})).filter(({group})=>editing||applies(group.variantIds)).map(({group,i})=><div className="skill-group" key={group.id}><div className="skill-group-head">{editing?<><input value={group.slot} aria-label="裝備部位" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,slot:e.target.value}:x)})}/><input value={group.label} aria-label="技能組名稱" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,label:e.target.value}:x)})}/><input value={(group.variantIds||[]).join(",")} aria-label="適用方案 ID" placeholder="方案 ID（選填）" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,variantIds:e.target.value.split(",").map(v=>v.trim()).filter(Boolean)}:x)})}/><button className="danger-small" onClick={()=>patchStage({skills:stage.skills.filter((_,n)=>n!==i)})}>刪除技能組</button></>:<><strong>{group.slot}</strong><span>{group.label}</span></>}</div><div className="gems">{group.gems.map((s,x)=>editing?<span className="gem-edit" key={x}><select value={s.color} onChange={e=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.map((gem,gi)=>gi===x?{...gem,color:e.target.value as Skill["color"]}:gem)}:row)})}><option value="blue">藍</option><option value="red">紅</option><option value="green">綠</option></select><input value={s.name} onChange={e=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.map((gem,gi)=>gi===x?{...gem,name:e.target.value}:gem)}:row)})}/><button aria-label={`移除 ${s.name}`} onClick={()=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.filter((_,gi)=>gi!==x)}:row)})}>×</button></span>:<span className={`gem ${s.color}`} key={x}><i>{s.color==="blue"?"B":s.color==="red"?"R":"G"}</i>{s.name}</span>)}</div>{editing&&<button className="inline-button" onClick={()=>patchStage({skills:stage.skills.map((row,n)=>n===i?{...row,gems:[...row.gems,{name:"新寶石",color:"blue"}]}:row)})}>＋ 新增寶石</button>}</div>) : <p className="empty">尚未填寫技能連線。</p>}
             {editing && <button className="inline-button" onClick={()=>patchStage({skills:[...stage.skills,{id:uid(),slot:"裝備部位",label:"技能組名稱",gems:[]}]})}>＋ 新增技能組</button>}
           </article>
 
+          <article className="card swaps-card"><div className="card-heading"><span className="icon">⇄</span><div><small>CONDITIONAL SWAPS</small><h2>寶石替換</h2></div></div>
+            {stage.swaps.map((s,i)=>({s,i})).filter(({s})=>editing||applies(s.variantIds)).map(({s,i})=>editing?<div className="row-editor swap-editor" key={s.id}><input value={s.remove} placeholder="移除寶石" onChange={e=>patchStage({swaps:stage.swaps.map((x,n)=>n===i?{...x,remove:e.target.value}:x)})}/><span>→</span><input value={s.add} placeholder="換入寶石" onChange={e=>patchStage({swaps:stage.swaps.map((x,n)=>n===i?{...x,add:e.target.value}:x)})}/><input value={s.when} placeholder="使用時機" onChange={e=>patchStage({swaps:stage.swaps.map((x,n)=>n===i?{...x,when:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchStage({swaps:stage.swaps.filter((_,n)=>n!==i)})}>刪除</button></div>:<div className="swap-item" key={s.id}><strong>{s.when}</strong><span>{s.remove}</span><b>→</b><span>{s.add}</span></div>)}
+            {!stage.swaps.length&&!editing&&<p className="empty">這個階段沒有情境替換。</p>}{editing&&<button className="inline-button" onClick={()=>patchStage({swaps:[...stage.swaps,{id:uid(),remove:"",add:"",when:""}]})}>＋ 新增替換</button>}
+          </article>
+
+          <article className="card spectre-card"><div className="card-heading"><span className="icon">♟</span><div><small>SPECTRE ROSTER</small><h2>幽魂配置</h2></div></div>
+            <div className="spectre-list">{stage.spectres.map((s,i)=>editing?<div className="row-editor spectre-editor" key={s.id}><input value={s.name} placeholder="幽魂名稱" onChange={e=>patchStage({spectres:stage.spectres.map((x,n)=>n===i?{...x,name:e.target.value}:x)})}/><input type="number" min="1" value={s.count} aria-label="數量" onChange={e=>patchStage({spectres:stage.spectres.map((x,n)=>n===i?{...x,count:Number(e.target.value)||1}:x)})}/><input value={s.role} placeholder="功能" onChange={e=>patchStage({spectres:stage.spectres.map((x,n)=>n===i?{...x,role:e.target.value}:x)})}/><input value={s.acquisition} placeholder="取得方式" onChange={e=>patchStage({spectres:stage.spectres.map((x,n)=>n===i?{...x,acquisition:e.target.value}:x)})}/><input value={s.replaces} placeholder="取代對象" onChange={e=>patchStage({spectres:stage.spectres.map((x,n)=>n===i?{...x,replaces:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchStage({spectres:stage.spectres.filter((_,n)=>n!==i)})}>刪除</button></div>:<div className="spectre-item" key={s.id}><span className="spectre-count">×{s.count}</span><div><strong>{s.name}</strong><p>{s.role}</p><small>{s.acquisition}{s.replaces&&` · 取代：${s.replaces}`}</small></div></div>)}</div>
+            {!stage.spectres.length&&!editing&&<p className="empty">這個階段尚未指定幽魂陣容。</p>}{editing&&<button className="inline-button" onClick={()=>patchStage({spectres:[...stage.spectres,{id:uid(),name:"",count:1,role:"",acquisition:"",replaces:""}]})}>＋ 新增幽魂</button>}
+          </article>
+
+          <article className="card warnings-card"><div className="card-heading"><span className="icon">!</span><div><small>ZH-TW WARNINGS</small><h2>繁中詞綴與危險內容</h2></div></div>
+            {stage.warnings.map((w,i)=>editing?<div className="warning-editor" key={w.id}><select value={w.severity} onChange={e=>patchStage({warnings:stage.warnings.map((x,n)=>n===i?{...x,severity:e.target.value as Warning["severity"]}:x)})}><option value="info">資訊</option><option value="warning">注意</option><option value="danger">危險</option></select><input value={w.title} placeholder="標題" onChange={e=>patchStage({warnings:stage.warnings.map((x,n)=>n===i?{...x,title:e.target.value}:x)})}/><input value={w.localizedText} placeholder="繁中遊戲文字" onChange={e=>patchStage({warnings:stage.warnings.map((x,n)=>n===i?{...x,localizedText:e.target.value}:x)})}/><input value={w.recommendation} placeholder="處理建議" onChange={e=>patchStage({warnings:stage.warnings.map((x,n)=>n===i?{...x,recommendation:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchStage({warnings:stage.warnings.filter((_,n)=>n!==i)})}>刪除</button></div>:<div className={`warning-item ${w.severity}`} key={w.id}><strong>{w.title}</strong><p>{w.localizedText}</p><span>{w.recommendation}</span></div>)}
+            {!stage.warnings.length&&!editing&&<p className="empty">這個階段沒有特別警告。</p>}{editing&&<button className="inline-button" onClick={()=>patchStage({warnings:[...stage.warnings,{id:uid(),severity:"warning",category:"general",title:"",localizedText:"",recommendation:""}]})}>＋ 新增警告</button>}
+          </article>
+
+          <article className="card progression-card"><div className="card-heading"><span className="icon">⌘</span><div><small>CHARACTER PROGRESSION</small><h2>昇華、天賦與刺青</h2></div></div>
+            {stage.progression.map((p,i)=>editing?<div className="row-editor progression-editor" key={p.id}><select value={p.type} onChange={e=>patchStage({progression:stage.progression.map((x,n)=>n===i?{...x,type:e.target.value as Progression["type"]}:x)})}><option value="ascendancy">昇華</option><option value="passive">天賦</option><option value="anointment">塗油</option><option value="tattoo">刺青</option></select><input value={p.name} placeholder="名稱" onChange={e=>patchStage({progression:stage.progression.map((x,n)=>n===i?{...x,name:e.target.value}:x)})}/><input value={p.detail} placeholder="時機與效果" onChange={e=>patchStage({progression:stage.progression.map((x,n)=>n===i?{...x,detail:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchStage({progression:stage.progression.filter((_,n)=>n!==i)})}>刪除</button></div>:<div className="progression-item" key={p.id}><span>{({ascendancy:"昇華",passive:"天賦",anointment:"塗油",tattoo:"刺青"} as const)[p.type]}</span><div><strong>{p.name}</strong><p>{p.detail}</p></div></div>)}
+            {!stage.progression.length&&!editing&&<p className="empty">尚未整理這個階段的角色調整。</p>}{editing&&<button className="inline-button" onClick={()=>patchStage({progression:[...stage.progression,{id:uid(),type:"passive",name:"",detail:""}]})}>＋ 新增角色調整</button>}
+          </article>
+
+          <article className="card sections-card"><div className="card-heading"><span className="icon">≡</span><div><small>DETAILED GUIDE</small><h2>製作、操作與 FAQ</h2></div></div>
+            {stage.sections.map((s,i)=>editing?<div className="section-editor" key={s.id}><select value={s.type} onChange={e=>patchStage({sections:stage.sections.map((x,n)=>n===i?{...x,type:e.target.value as GuideSection["type"]}:x)})}><option value="craft">製作</option><option value="map-mods">地圖詞綴</option><option value="mechanic">機制</option><option value="faq">FAQ</option><option value="playstyle">操作</option><option value="bossing">頭目</option></select><input value={s.title} placeholder="標題" onChange={e=>patchStage({sections:stage.sections.map((x,n)=>n===i?{...x,title:e.target.value}:x)})}/><textarea value={s.content} placeholder="詳細內容" onChange={e=>patchStage({sections:stage.sections.map((x,n)=>n===i?{...x,content:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchStage({sections:stage.sections.filter((_,n)=>n!==i)})}>刪除</button></div>:<details key={s.id}><summary><span>{s.type}</span>{s.title}</summary><p>{s.content}</p></details>)}
+            {!stage.sections.length&&!editing&&<p className="empty">尚未加入詳細章節。</p>}{editing&&<button className="inline-button" onClick={()=>patchStage({sections:[...stage.sections,{id:uid(),type:"mechanic",title:"",content:""}]})}>＋ 新增折疊章節</button>}
+          </article>
+
           <article className="card gear-card"><div className="card-heading"><span className="icon">↗</span><div><small>UPGRADES</small><h2>裝備升級</h2></div></div>
-            <div className="gear-table"><div className="gear-head"><span>部位</span><span>目前</span><span></span><span>下一步</span><span></span></div>{stage.gear.map((g,i)=><div className="gear-row" key={i}>{editing?<><input value={g.slot} onChange={e=>patchStage({gear:stage.gear.map((x,n)=>n===i?{...x,slot:e.target.value}:x)})}/><input value={g.current} onChange={e=>patchStage({gear:stage.gear.map((x,n)=>n===i?{...x,current:e.target.value}:x)})}/><span>→</span><input value={g.next} onChange={e=>patchStage({gear:stage.gear.map((x,n)=>n===i?{...x,next:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchStage({gear:stage.gear.filter((_,n)=>n!==i)})}>刪除</button></>:<><strong>{g.slot}</strong><span>{g.current}<small>{g.note}</small></span><b>→</b><span>{g.next}</span><span></span></>}</div>)}</div>
+            <div className="gear-table"><div className="gear-head"><span>部位</span><span>目前</span><span></span><span>下一步</span><span></span></div>{stage.gear.map((g,i)=>({g,i})).filter(({g})=>editing||applies(g.variantIds)).map(({g,i})=><div className="gear-row" key={i}>{editing?<><input value={g.slot} onChange={e=>patchStage({gear:stage.gear.map((x,n)=>n===i?{...x,slot:e.target.value}:x)})}/><input value={g.current} onChange={e=>patchStage({gear:stage.gear.map((x,n)=>n===i?{...x,current:e.target.value}:x)})}/><span>→</span><input value={g.next} onChange={e=>patchStage({gear:stage.gear.map((x,n)=>n===i?{...x,next:e.target.value}:x)})}/><button className="danger-small" onClick={()=>patchStage({gear:stage.gear.filter((_,n)=>n!==i)})}>刪除</button></>:<><strong>{g.slot}</strong><span>{g.current}<small>{g.note}</small></span><b>→</b><span>{g.next}</span><span></span></>}</div>)}</div>
             {editing && <button className="inline-button" onClick={()=>patchStage({gear:[...stage.gear,{slot:"部位",current:"目前裝備",next:"下一步裝備",note:""}]})}>＋ 新增裝備列</button>}
           </article>
 
