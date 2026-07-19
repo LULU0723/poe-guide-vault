@@ -143,7 +143,7 @@ export default function Home() {
   };
   const deleteGuide = (id: string) => { if (guides.length === 1) { alert("攻略庫至少需要保留一份攻略。"); return; } const target = guides.find(g => g.id === id); if (!target || !confirm(`確定刪除「${target.title}」？此動作無法復原。`)) return; const next = guides.filter(g => g.id !== id); setGuides(next); if (guideId === id) { setGuideId(next[0].id); setStageId(next[0].stages[0].id); } };
   const duplicateGuide = (source: Guide) => { const copy = normalizeGuide(JSON.parse(JSON.stringify(source))); copy.id = `${source.id}-copy-${uid()}`; copy.title = `${source.title}（複製）`; setGuides(gs => [...gs, copy]); };
-  const pasteImage = (e: ClipboardEvent<HTMLDivElement>) => {
+  const pasteImage = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const image = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/")); if (!image) return;
     e.preventDefault(); const file = image.getAsFile(); if (!file) return; const reader = new FileReader(); reader.onload = () => patchStage({ image:String(reader.result) }); reader.readAsDataURL(file);
   };
