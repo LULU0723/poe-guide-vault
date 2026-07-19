@@ -2,7 +2,7 @@
 
 個人使用的《Path of Exile》流派攻略閱讀器。將一份攻略拆成固定階段，集中呈現目前目標、轉型條件、技能連線、裝備升級、PoB、個人筆記與圖片。
 
-線上版本：[poe-guide-vault.lulu0723.chatgpt.site](https://poe-guide-vault.lulu0723.chatgpt.site)
+線上版本：[lulu0723.github.io/poe-guide-vault](https://lulu0723.github.io/poe-guide-vault/)（GitHub Pages，靜態部署）
 
 ## 主要功能
 
@@ -10,6 +10,7 @@
 - 目標與轉型條件核取進度
 - 攻略名稱、技能寶石、裝備、筆記與來源的編輯模式\n- 依裝備部位整理技能連線，可新增或刪除技能組、寶石與裝備列\n- 配置方案切換與情境寶石替換\n- 分階段幽魂陣容與繁中危險詞綴\n- 昇華、天賦、塗油、刺青與折疊式製作／FAQ\n- 複製與刪除整份攻略
 - PoB／pobb.in 外部連結
+- **貼 PoB 匯入**：貼上 Path of Building 匯出代碼，於瀏覽器端精確解碼技能、裝備、天賦與作者 Notes，自動分階段建立攻略草稿
 - 從剪貼簿貼上攻略圖片
 - 新增多份流派攻略
 - JSON 匯入與匯出備份
@@ -39,29 +40,35 @@
 
 ## 本機開發
 
-需求：Node.js `>=22.13.0`
+需求：Node.js `>=22.13.0`。這是一個純前端（client-only）的 Next.js app，靜態輸出，無後端、無資料庫。
 
 ```bash
 npm ci
-npm run dev
+npm run dev      # 本機開發
+npm run lint     # 檢查
+npm run test     # 單元測試（PoB 解碼核心）
+npm run build    # 靜態輸出到 out/
+npm run preview  # 本機預覽 out/
 ```
 
-正式建置與檢查：
+## 部署
 
-```bash
-npm run lint
-npm run build
-```
+推送到 `main` 會由 [GitHub Actions](.github/workflows/deploy.yml) 自動 `next build`（`output: "export"`）並發布到 GitHub Pages。
+
+- 首次啟用：Repo → **Settings → Pages → Source** 選 **GitHub Actions**。
+- 站台路徑為 `/poe-guide-vault/`，由 workflow 的 `PAGES_BASE_PATH` 設定；若改用自訂網域或使用者頁面，將其設為空字串即可。
 
 ## 專案結構
 
 ```text
 app/                 網站畫面與互動
+app/lib/             PoB 解碼核心（pob-core.mjs、pob.ts）
 guide-spec/          AI 轉換指令、Schema 與空白範本
 docs/                Roadmap 與版本紀錄
 examples/            可匯入攻略範例
 public/              靜態資源
-scripts/             建置與檢查工具
+tests/               單元測試
+.github/workflows/   GitHub Pages 自動部署
 ```
 
 ## 資料與圖片注意事項
