@@ -1,23 +1,15 @@
 {
-  "format": "poe-guide-v1",
-  "guides": [
-    {
-      "id": "build-name-version",
-      "title": "流派名稱",
-      "version": "3.29",
-      "archetype": "昇華職業 · 傷害類型",
-      "updated": "",
-      "pob": "",
-      "source": "",
-      "stages": [
-        { "id": "overview", "name": "總覽", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
-        { "id": "campaign", "name": "劇情", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
-        { "id": "early-maps", "name": "初入輿圖", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
-        { "id": "low-budget", "name": "低預算", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
-        { "id": "medium-budget", "name": "中預算", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
-        { "id": "high-budget", "name": "高預算", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
-        { "id": "endgame", "name": "終局", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" }
-      ]
-    }
-  ]
+  "format": "poe-guide-v2",
+  "guides": [{
+    "id": "build-name-version", "title": "流派名稱", "version": "3.29", "archetype": "昇華職業 · 傷害類型", "updated": "", "pob": "", "source": "",
+    "stages": [
+      { "id": "overview", "name": "總覽", "summary": "", "goals": [], "conditions": [], "skills": [{ "id": "body-main-link", "slot": "胸甲", "label": "主力連線", "gems": [] }], "gear": [], "notes": "" },
+      { "id": "campaign", "name": "劇情", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+      { "id": "early-maps", "name": "初入輿圖", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+      { "id": "low-budget", "name": "低預算", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+      { "id": "medium-budget", "name": "中預算", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+      { "id": "high-budget", "name": "高預算", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" },
+      { "id": "endgame", "name": "終局", "summary": "", "goals": [], "conditions": [], "skills": [], "gear": [], "notes": "" }
+    ]
+  }]
 }
