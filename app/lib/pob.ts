@@ -111,13 +111,19 @@ export async function decodePob(code: string): Promise<ParsedPob> {
 }
 
 type BuildMeta = { title?: string; source?: string; version?: string };
+type BuildOpts = { simplify?: boolean };
 
 /**
  * Assemble a draft guide from parsed PoB data. `overrides` maps a set key
  * (`${kind}:${name}`) to a stage id, letting the caller correct any set the
  * heuristic couldn't place (or placed wrong) before the guide is built.
+ *
+ * With `simplify`, each stage keeps only its most-advanced skill/item set (the
+ * full ~8-group layout for that point) instead of pouring in every set — the
+ * difference between a usable guide and a 145-group dump.
  */
-export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: Record<string, string> = {}): DecodeResult {
+export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: Record<string, string> = {}, opts: BuildOpts = {}): DecodeResult {
+  const simplify = opts.simplify ?? false;
   const stages: DraftStage[] = STAGE_IDS.map((id, i) => ({
     id, name: STAGE_NAMES[i], summary: "", skills: [], gear: [], progression: [], notes: "",
   }));
@@ -144,20 +150,26 @@ export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: R
     stageOf(place("tree", t.name, t.stage)).progression.push({ type: "passive", name: t.name, detail: `${t.nodeCount} 點配置` });
   }
 
-  for (const set of parsed.skills) {
-    const target = stageOf(place("skill", set.name, set.stage));
-    for (const g of set.groups) {
-      gemPlacements += g.gems.length;
-      const label = [set.name, g.label].filter(Boolean).join(" · ");
-      // Colour isn't stored in the PoB code; default blue and let the user recolour.
-      target.skills.push({ slot: g.slot, label, gems: g.gems.map(name => ({ name, color: "blue" as const })) });
+  // Group each kind of set by its resolved stage, then keep all (raw) or just
+  // the most-advanced one per stage (simplified).
+  const skillByStage: Record<string, ParsedSkillSet[]> = {};
+  for (const set of parsed.skills) (skillByStage[place("skill", set.name, set.stage)] ??= []).push(set);
+  for (const [st, list] of Object.entries(skillByStage)) {
+    for (const set of (simplify ? list.slice(-1) : list)) {
+      for (const g of set.groups) {
+        gemPlacements += g.gems.length;
+        const label = simplify ? g.label : [set.name, g.label].filter(Boolean).join(" · ");
+        // Colour isn't stored in the PoB code; default blue and let the user recolour.
+        stageOf(st).skills.push({ slot: g.slot, label, gems: g.gems.map(name => ({ name, color: "blue" as const })) });
+      }
     }
   }
 
-  for (const set of parsed.items) {
-    const target = stageOf(place("item", set.name, set.stage));
-    for (const sl of set.slots) {
-      target.gear.push({ slot: sl.slot, current: sl.item, next: "", note: set.name });
+  const itemByStage: Record<string, ParsedItemSet[]> = {};
+  for (const set of parsed.items) (itemByStage[place("item", set.name, set.stage)] ??= []).push(set);
+  for (const [st, list] of Object.entries(itemByStage)) {
+    for (const set of (simplify ? list.slice(-1) : list)) {
+      for (const sl of set.slots) stageOf(st).gear.push({ slot: sl.slot, current: sl.item, next: "", note: simplify ? "" : set.name });
     }
   }
 
@@ -180,6 +192,39 @@ export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: R
     },
     sets,
   };
+}
+
+// ---- glossary translation (names → official zh-TW) --------------------------
+
+/** A user-loaded glossary of official Traditional-Chinese PoE terms. */
+export type Glossary = {
+  gems: Record<string, string>;
+  uniques: Record<string, string>;
+  itemBases?: Record<string, string>;
+  spectres?: Record<string, string>;
+};
+
+const GEM_PREFIXES = ["Awakened ", "Vaal ", "Greater ", "Lesser "];
+function trGem(n: string, gems: Record<string, string>, miss: Set<string>): string {
+  if (gems[n]) return gems[n];
+  const base = n.replace(/ of .+$/, "");        // transfigured "X of Y" → "X"
+  if (base !== n && gems[base]) return gems[base];
+  for (const p of GEM_PREFIXES) if (n.startsWith(p) && gems[n.slice(p.length)]) return gems[n.slice(p.length)];
+  miss.add(n);
+  return n;                                       // unknown: keep English, flag
+}
+function trItem(n: string, gl: Glossary): string {
+  return gl.uniques[n] || gl.itemBases?.[n] || n; // author labels (not in glossary) stay as-is
+}
+
+/** Translate gem/item names in a draft guide in place. Unknown gems are flagged. */
+export function translateGuide(guide: DraftGuide, gl: Glossary): { guide: DraftGuide; missing: string[] } {
+  const miss = new Set<string>();
+  for (const s of guide.stages) {
+    for (const grp of s.skills) for (const gem of grp.gems) gem.name = trGem(gem.name, gl.gems, miss);
+    for (const g of s.gear) { g.current = trItem(g.current, gl); if (g.next) g.next = trItem(g.next, gl); }
+  }
+  return { guide, missing: [...miss] };
 }
 
 /** Decode a PoB export code straight into an importable draft guide. */
