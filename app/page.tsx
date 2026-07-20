@@ -20,7 +20,7 @@ type GuideSection = { id: string; type: "craft" | "map-mods" | "mechanic" | "faq
 type Stage = {
   id: string; name: string; summary: string; goals: ChecklistItem[]; conditions: ChecklistItem[];
   skills: SkillGroup[]; swaps: SkillSwap[]; gear: Gear[]; spectres: Spectre[]; warnings: Warning[];
-  progression: Progression[]; sections: GuideSection[]; notes: string; image?: string;
+  progression: Progression[]; sections: GuideSection[]; notes: string; image?: string; defaultSkillIds?: string[];
 };
 type Guide = { id: string; title: string; version: string; archetype: string; updated: string; pob: string; source: string; pros: string[]; cons: string[]; coreMechanics: string[]; requiredItems: string[]; recommendedItems: string[]; variants: Variant[]; stages: Stage[] };
 
@@ -70,6 +70,7 @@ export default function Home() {
   const [pobError, setPobError] = useState("");
   const [pobParsed, setPobParsed] = useState<ParsedPob | null>(null);
   const [pobOverrides, setPobOverrides] = useState<Record<string, string>>({});
+  const [pobExcluded, setPobExcluded] = useState<Record<string, boolean>>({});
   const [pobResult, setPobResult] = useState<DecodeResult | null>(null);
   const [glossary, setGlossary] = useState<Glossary | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -129,13 +130,15 @@ export default function Home() {
     else result = [...guides, ...pendingImport.map(g => guides.some(old => old.id === g.id) ? { ...g, id: `${g.id}-${uid()}` } : g)];
     setGuides(result); setGuideId(result[0].id); setStageId(result[0].stages[0].id); setPendingImport(null);
   };
-  const openPobImport = () => { setPobCode(""); setPobTitle(""); setPobSource(""); setPobError(""); setPobParsed(null); setPobOverrides({}); setPobResult(null); setPobOpen(true); };
+  const openPobImport = () => { setPobCode(""); setPobTitle(""); setPobSource(""); setPobError(""); setPobParsed(null); setPobOverrides({}); setPobExcluded({}); setPobResult(null); setPobOpen(true); };
+  const rebuildPob = (parsed: ParsedPob, overrides: Record<string, string>, excluded: Record<string, boolean>) =>
+    buildGuide(parsed, { title: pobTitle, source: pobSource }, overrides, { excluded: Object.keys(excluded).filter(n => excluded[n]) });
   const runPobDecode = async () => {
-    setPobBusy(true); setPobError(""); setPobResult(null); setPobParsed(null); setPobOverrides({});
+    setPobBusy(true); setPobError(""); setPobResult(null); setPobParsed(null); setPobOverrides({}); setPobExcluded({});
     try {
       const parsed = await decodePob(pobCode);
       setPobParsed(parsed);
-      setPobResult(buildGuide(parsed, { title: pobTitle, source: pobSource }));
+      setPobResult(rebuildPob(parsed, {}, {}));
     } catch (err) {
       const code = err instanceof Error ? err.message : "";
       setPobError(code === "EMPTY" ? "請先貼上 PoB 匯出代碼。" : code === "NOT_POB" ? "這段代碼不是有效的 PoB 匯出（無法解出 Path of Building 內容）。" : code === "BAD_XML" ? "PoB 內容解析失敗，代碼可能不完整。" : "解碼失敗：請確認貼上的是完整的 PoB 匯出代碼（不是 pobb.in 網址）。");
@@ -147,7 +150,13 @@ export default function Home() {
     const next = { ...pobOverrides };
     for (const kind of ["skill", "item", "tree"]) { if (stage) next[`${kind}:${name}`] = stage; else delete next[`${kind}:${name}`]; }
     setPobOverrides(next);
-    setPobResult(buildGuide(pobParsed, { title: pobTitle, source: pobSource }, next));
+    setPobResult(rebuildPob(pobParsed, next, pobExcluded));
+  };
+  const toggleExcludeSet = (name: string) => {
+    if (!pobParsed) return;
+    const next = { ...pobExcluded, [name]: !pobExcluded[name] };
+    setPobExcluded(next);
+    setPobResult(rebuildPob(pobParsed, pobOverrides, next));
   };
   const loadGlossary = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -167,13 +176,24 @@ export default function Home() {
   const glossaryColors = glossary?.gemColors ? Object.keys(glossary.gemColors).length : 0;
   const createFromPob = () => {
     if (!pobParsed) return;
-    // Rebuild simplified (one full layout per stage) with the confirmed stage mapping,
-    // then apply the local glossary if loaded. All deterministic — no LLM here.
-    const built = buildGuide(pobParsed, { title: pobTitle, source: pobSource }, pobOverrides, { simplify: true });
+    // Rebuild simplified (one full layout per stage) with the confirmed stage mapping
+    // and deletions, then apply the local glossary if loaded. All deterministic — no LLM.
+    const built = buildGuide(pobParsed, { title: pobTitle, source: pobSource }, pobOverrides, { simplify: true, excluded: Object.keys(pobExcluded).filter(n => pobExcluded[n]) });
     if (glossary) translateGuide(built.guide, glossary);
     const guide = normalizeGuide({ ...built.guide, pob: pobCode.trim() } as unknown as Guide);
+    guide.stages.forEach(s => { s.defaultSkillIds = s.skills.map(g => g.id); }); // snapshot import order for "restore default"
     setGuides(gs => [...gs, guide]); setGuideId(guide.id); setStageId(guide.stages[0].id);
     setPobOpen(false); setPobResult(null); setPobParsed(null); setShowLibrary(false);
+  };
+  // Reorder a skill group within the current stage; restore returns to the imported order.
+  const moveSkill = (from: number, to: number) => {
+    if (to < 0 || to >= stage.skills.length) return;
+    const next = [...stage.skills]; const [m] = next.splice(from, 1); next.splice(to, 0, m); patchStage({ skills: next });
+  };
+  const restoreSkillOrder = () => {
+    const order = stage.defaultSkillIds; if (!order) return;
+    const rank = new Map(order.map((id, i) => [id, i]));
+    patchStage({ skills: [...stage.skills].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999)) });
   };
   const newGuide = () => {
     const id = uid(); const fresh: Guide = { id, title:"未命名攻略", version:"3.29", archetype:"尚未設定流派", updated:new Date().toISOString().slice(0,10), pob:"", source:"", pros:[], cons:[], coreMechanics:[], requiredItems:[], recommendedItems:[], variants:[], stages:stageNames.map(emptyStage) };
@@ -233,8 +253,9 @@ export default function Home() {
           </article>
 
           <article className="card skills-card"><div className="card-heading"><span className="icon">⌁</span><div><small>GEM LINKS BY ITEM</small><h2>技能連線</h2></div></div>
-            {stage.skills.length ? stage.skills.map((group,i)=>({group,i})).filter(({group})=>editing||applies(group.variantIds)).map(({group,i})=><div className="skill-group" key={group.id}><div className="skill-group-head">{editing?<><input value={group.slot} aria-label="裝備部位" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,slot:e.target.value}:x)})}/><input value={group.label} aria-label="技能組名稱" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,label:e.target.value}:x)})}/><input value={(group.variantIds||[]).join(",")} aria-label="適用方案 ID" placeholder="方案 ID（選填）" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,variantIds:e.target.value.split(",").map(v=>v.trim()).filter(Boolean)}:x)})}/><button className="danger-small" onClick={()=>patchStage({skills:stage.skills.filter((_,n)=>n!==i)})}>刪除技能組</button></>:<><strong>{group.slot}</strong><span>{group.label}</span></>}</div><div className="gems">{group.gems.map((s,x)=>editing?<span className="gem-edit" key={x}><select value={s.color} onChange={e=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.map((gem,gi)=>gi===x?{...gem,color:e.target.value as Skill["color"]}:gem)}:row)})}><option value="blue">藍</option><option value="red">紅</option><option value="green">綠</option></select><input value={s.name} onChange={e=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.map((gem,gi)=>gi===x?{...gem,name:e.target.value}:gem)}:row)})}/><button aria-label={`移除 ${s.name}`} onClick={()=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.filter((_,gi)=>gi!==x)}:row)})}>×</button></span>:<span className={`gem ${s.color}`} key={x}><i>{s.color==="blue"?"B":s.color==="red"?"R":"G"}</i>{s.name}</span>)}</div>{editing&&<button className="inline-button" onClick={()=>patchStage({skills:stage.skills.map((row,n)=>n===i?{...row,gems:[...row.gems,{name:"新寶石",color:"blue"}]}:row)})}>＋ 新增寶石</button>}</div>) : <p className="empty">尚未填寫技能連線。</p>}
+            {stage.skills.length ? stage.skills.map((group,i)=>({group,i})).filter(({group})=>editing||applies(group.variantIds)).map(({group,i})=><div className="skill-group" key={group.id}><div className="skill-group-head">{editing?<><button className="move-btn" onClick={()=>moveSkill(i,i-1)} disabled={i===0} aria-label="上移">⬆</button><button className="move-btn" onClick={()=>moveSkill(i,i+1)} disabled={i===stage.skills.length-1} aria-label="下移">⬇</button><input value={group.slot} aria-label="裝備部位" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,slot:e.target.value}:x)})}/><input value={group.label} aria-label="技能組名稱" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,label:e.target.value}:x)})}/><input value={(group.variantIds||[]).join(",")} aria-label="適用方案 ID" placeholder="方案 ID（選填）" onChange={e=>patchStage({skills:stage.skills.map((x,n)=>n===i?{...x,variantIds:e.target.value.split(",").map(v=>v.trim()).filter(Boolean)}:x)})}/><button className="danger-small" onClick={()=>patchStage({skills:stage.skills.filter((_,n)=>n!==i)})}>刪除技能組</button></>:<><strong>{group.slot}</strong><span>{group.label}</span></>}</div><div className="gems">{group.gems.map((s,x)=>editing?<span className="gem-edit" key={x}><select value={s.color} onChange={e=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.map((gem,gi)=>gi===x?{...gem,color:e.target.value as Skill["color"]}:gem)}:row)})}><option value="blue">藍</option><option value="red">紅</option><option value="green">綠</option></select><input value={s.name} onChange={e=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.map((gem,gi)=>gi===x?{...gem,name:e.target.value}:gem)}:row)})}/><button aria-label={`移除 ${s.name}`} onClick={()=>patchStage({skills:stage.skills.map((row,ri)=>ri===i?{...row,gems:row.gems.filter((_,gi)=>gi!==x)}:row)})}>×</button></span>:<span className={`gem ${s.color}`} key={x}><i>{s.color==="blue"?"B":s.color==="red"?"R":"G"}</i>{s.name}</span>)}</div>{editing&&<button className="inline-button" onClick={()=>patchStage({skills:stage.skills.map((row,n)=>n===i?{...row,gems:[...row.gems,{name:"新寶石",color:"blue"}]}:row)})}>＋ 新增寶石</button>}</div>) : <p className="empty">尚未填寫技能連線。</p>}
             {editing && <button className="inline-button" onClick={()=>patchStage({skills:[...stage.skills,{id:uid(),slot:"裝備部位",label:"技能組名稱",gems:[]}]})}>＋ 新增技能組</button>}
+            {editing && stage.defaultSkillIds && stage.skills.length>1 && <button className="inline-button" onClick={restoreSkillOrder}>↺ 恢復預設順序</button>}
           </article>
 
           <article className="card swaps-card"><div className="card-heading"><span className="icon">⇄</span><div><small>CONDITIONAL SWAPS</small><h2>寶石替換</h2></div></div>
@@ -297,13 +318,13 @@ export default function Home() {
           <div className="pob-stats"><span><b>{pobResult.summary.skillSets}</b>技能組</span><span><b>{pobResult.summary.itemSets}</b>裝備組</span><span><b>{pobResult.summary.trees}</b>天賦樹</span><span><b>{pobResult.summary.gemPlacements}</b>寶石擺放</span></div>
           <p className="pob-title-preview">將建立：<b>{pobResult.guide.title}</b>{pobResult.guide.archetype && <span>（{pobResult.guide.archetype}）</span>}</p>
           {pobFlagged.length>0 ? <div className="pob-flags"><p className="pob-warn">⚠ 有 {pobFlagged.length} 套配置無法自動判斷階段，請指定（留空＝暫放初入輿圖）：</p>
-            {pobFlagged.map(s=><div className="pob-flag-row" key={s.name}><span className="pob-kind">{kindLabel(s.kind)}</span><span className="pob-setname">{s.name}</span><select value={pobOverrides[`${s.kind}:${s.name}`]||""} onChange={e=>reassignSet(s.name,e.target.value)}><option value="">未指定</option>{stageOptions.map(([id,nm])=><option key={id} value={id}>{nm}</option>)}</select></div>)}
+            {pobFlagged.map(s=><div className="pob-flag-row" key={s.name}><span className={"pob-kind "+s.kind}>{kindLabel(s.kind)}</span><span className="pob-setname">{s.name}</span><select value={pobOverrides[`${s.kind}:${s.name}`]||""} onChange={e=>reassignSet(s.name,e.target.value)}><option value="">未指定</option>{stageOptions.map(([id,nm])=><option key={id} value={id}>{nm}</option>)}</select></div>)}
           </div> : <p className="pob-ok">✓ 所有配置都已自動判斷階段。</p>}
-          <details className="pob-map"><summary>檢視 / 調整全部階段對應（{pobAllSets.length} 套配置）— 自動判斷只是起點，任何一套都可改</summary>
-            {pobAllSets.map(s=><div className={s.assigned?"pob-map-set":"pob-map-set flag"} key={s.name}><span className="pob-kind">{kindLabel(s.kind)}</span><span className="pob-setname">{s.name}</span><select value={s.stage} onChange={e=>reassignSet(s.name,e.target.value)}>{stageOptions.map(([id,nm])=><option key={id} value={id}>{nm}</option>)}</select></div>)}
+          <details className="pob-map"><summary>檢視 / 調整全部階段對應（{pobAllSets.length} 套配置）— 可改分階、或刪除不要的（🟦技能 🟨裝備 🟩天賦）</summary>
+            {pobAllSets.map(s=><div className={`pob-map-set${s.assigned?"":" flag"}${pobExcluded[s.name]?" excluded":""}`} key={s.name}><span className={"pob-kind "+s.kind}>{kindLabel(s.kind)}</span><span className="pob-setname">{s.name}</span><select value={s.stage} disabled={!!pobExcluded[s.name]} onChange={e=>reassignSet(s.name,e.target.value)}>{stageOptions.map(([id,nm])=><option key={id} value={id}>{nm}</option>)}</select><button className="pob-del" onClick={()=>toggleExcludeSet(s.name)} title={pobExcluded[s.name]?"復原":"刪除此配置"}>{pobExcluded[s.name]?"復原":"✕"}</button></div>)}
           </details>
           <p className="pob-note">建立時會<b>化簡</b>為每階一套完整佈局{glossary ? <>，並用詞庫<b>翻譯成繁中</b></> : <>（未載入詞庫 → 保留英文）</>}。解碼內容 100% 來自 PoB。</p>
-          <div className="pob-actions"><button className="ghost" onClick={()=>{setPobResult(null);setPobParsed(null);setPobOverrides({});}}>重新貼上</button><button className="primary" onClick={createFromPob}>建立攻略</button></div>
+          <div className="pob-actions"><button className="ghost" onClick={()=>{setPobResult(null);setPobParsed(null);setPobOverrides({});setPobExcluded({});}}>重新貼上</button><button className="primary" onClick={createFromPob}>建立攻略</button></div>
         </div>}
       </section></div>}
     </main>

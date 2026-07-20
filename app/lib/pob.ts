@@ -27,7 +27,7 @@ export type DecodeSummary = {
 // is false when no rule matched and it fell back — the UI flags these so the
 // user can place them instead of the tool silently guessing wrong.
 export type PobSet = {
-  key: string; kind: "skill" | "item" | "tree"; name: string; stage: string; assigned: boolean;
+  key: string; kind: "skill" | "item" | "tree"; name: string; stage: string; assigned: boolean; excluded: boolean;
 };
 export type DecodeResult = { guide: DraftGuide; summary: DecodeSummary; sets: PobSet[] };
 
@@ -111,7 +111,7 @@ export async function decodePob(code: string): Promise<ParsedPob> {
 }
 
 type BuildMeta = { title?: string; source?: string; version?: string };
-type BuildOpts = { simplify?: boolean };
+type BuildOpts = { simplify?: boolean; excluded?: string[] };
 
 /**
  * Assemble a draft guide from parsed PoB data. `overrides` maps a set key
@@ -124,6 +124,7 @@ type BuildOpts = { simplify?: boolean };
  */
 export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: Record<string, string> = {}, opts: BuildOpts = {}): DecodeResult {
   const simplify = opts.simplify ?? false;
+  const excluded = new Set(opts.excluded ?? []);
   const stages: DraftStage[] = STAGE_IDS.map((id, i) => ({
     id, name: STAGE_NAMES[i], summary: "", skills: [], gear: [], progression: [], notes: "",
   }));
@@ -133,27 +134,30 @@ export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: R
   let gemPlacements = 0;
 
   // Resolve a set's stage: explicit override > inferred > fallback (flagged).
+  // Records the set for the preview; returns "" for a set the user deleted.
   const place = (kind: PobSet["kind"], name: string, inferred: string): string => {
     const key = `${kind}:${name}`;
+    const isOut = excluded.has(name);
     const chosen = overrides[key] || inferred;
     const assigned = Boolean(overrides[key] || inferred);
-    if (!assigned) unassigned++;
+    if (!assigned && !isOut) unassigned++;
     const stage = chosen || "maps";
-    sets.push({ key, kind, name, stage, assigned });
-    return stage;
+    sets.push({ key, kind, name, stage, assigned, excluded: isOut });
+    return isOut ? "" : stage;
   };
 
   // Author's PoB Notes → overview stage (verbatim, only stripped of colour codes).
   stages[0].notes = parsed.notes;
 
   for (const t of parsed.trees) {
-    stageOf(place("tree", t.name, t.stage)).progression.push({ type: "passive", name: t.name, detail: `${t.nodeCount} 點配置` });
+    const st = place("tree", t.name, t.stage);
+    if (st) stageOf(st).progression.push({ type: "passive", name: t.name, detail: `${t.nodeCount} 點配置` });
   }
 
   // Group each kind of set by its resolved stage, then keep all (raw) or just
-  // the most-advanced one per stage (simplified).
+  // the most-advanced one per stage (simplified). Deleted sets return "" → skipped.
   const skillByStage: Record<string, ParsedSkillSet[]> = {};
-  for (const set of parsed.skills) (skillByStage[place("skill", set.name, set.stage)] ??= []).push(set);
+  for (const set of parsed.skills) { const st = place("skill", set.name, set.stage); if (st) (skillByStage[st] ??= []).push(set); }
   for (const [st, list] of Object.entries(skillByStage)) {
     for (const set of (simplify ? list.slice(-1) : list)) {
       for (const g of set.groups) {
@@ -166,7 +170,7 @@ export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: R
   }
 
   const itemByStage: Record<string, ParsedItemSet[]> = {};
-  for (const set of parsed.items) (itemByStage[place("item", set.name, set.stage)] ??= []).push(set);
+  for (const set of parsed.items) { const st = place("item", set.name, set.stage); if (st) (itemByStage[st] ??= []).push(set); }
   for (const [st, list] of Object.entries(itemByStage)) {
     for (const set of (simplify ? list.slice(-1) : list)) {
       for (const sl of set.slots) stageOf(st).gear.push({ slot: sl.slot, current: sl.item, next: "", note: simplify ? "" : set.name });
