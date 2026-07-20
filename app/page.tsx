@@ -155,7 +155,7 @@ export default function Home() {
     reader.onload = () => {
       try {
         const raw = JSON.parse(String(reader.result));
-        const gl: Glossary = { gems: raw.gems || {}, uniques: raw.uniques || {}, itemBases: raw.itemBases, spectres: raw.spectres };
+        const gl: Glossary = { gems: raw.gems || {}, gemColors: raw.gemColors, uniques: raw.uniques || {}, itemBases: raw.itemBases, spectres: raw.spectres };
         if (!Object.keys(gl.gems).length) throw new Error();
         setGlossary(gl);
         try { localStorage.setItem("poe-glossary", JSON.stringify(gl)); } catch { /* quota: keep in memory only */ }
@@ -189,6 +189,9 @@ export default function Home() {
   const stageIndex = guide.stages.findIndex(s => s.id === stage.id);
   // Sets the heuristic couldn't place, de-duplicated by name (skill/item/tree share a name).
   const pobFlagged = pobResult ? Array.from(new Map(pobResult.sets.filter(s => !s.assigned).map(s => [s.name, s])).values()) : [];
+  // Every set (deduped, ordered by stage) — each freely re-assignable, since auto-staging is only a starting point.
+  const stageIdx = (id: string) => stageOptions.findIndex(([sid]) => sid === id);
+  const pobAllSets = pobResult ? Array.from(new Map(pobResult.sets.map(s => [s.name, s])).values()).sort((a, b) => stageIdx(a.stage) - stageIdx(b.stage)) : [];
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -295,8 +298,8 @@ export default function Home() {
           {pobFlagged.length>0 ? <div className="pob-flags"><p className="pob-warn">⚠ 有 {pobFlagged.length} 套配置無法自動判斷階段，請指定（留空＝暫放初入輿圖）：</p>
             {pobFlagged.map(s=><div className="pob-flag-row" key={s.name}><span className="pob-kind">{kindLabel(s.kind)}</span><span className="pob-setname">{s.name}</span><select value={pobOverrides[`${s.kind}:${s.name}`]||""} onChange={e=>reassignSet(s.name,e.target.value)}><option value="">未指定</option>{stageOptions.map(([id,nm])=><option key={id} value={id}>{nm}</option>)}</select></div>)}
           </div> : <p className="pob-ok">✓ 所有配置都已自動判斷階段。</p>}
-          <details className="pob-map"><summary>檢視全部階段對應（{pobResult.sets.length} 套配置）</summary>
-            {stageOptions.map(([id,nm])=>{const inS=pobResult.sets.filter(x=>x.stage===id); return inS.length?<div className="pob-map-row" key={id}><b>{nm}</b><div>{inS.map(x=><span key={x.key} className={x.assigned?"pob-chip":"pob-chip flag"}>{kindLabel(x.kind)}·{x.name}</span>)}</div></div>:null;})}
+          <details className="pob-map"><summary>檢視 / 調整全部階段對應（{pobAllSets.length} 套配置）— 自動判斷只是起點，任何一套都可改</summary>
+            {pobAllSets.map(s=><div className={s.assigned?"pob-map-set":"pob-map-set flag"} key={s.name}><span className="pob-kind">{kindLabel(s.kind)}</span><span className="pob-setname">{s.name}</span><select value={s.stage} onChange={e=>reassignSet(s.name,e.target.value)}>{stageOptions.map(([id,nm])=><option key={id} value={id}>{nm}</option>)}</select></div>)}
           </details>
           <p className="pob-note">建立時會<b>化簡</b>為每階一套完整佈局{glossary ? <>，並用詞庫<b>翻譯成繁中</b></> : <>（未載入詞庫 → 保留英文）</>}。解碼內容 100% 來自 PoB。</p>
           <div className="pob-actions"><button className="ghost" onClick={()=>{setPobResult(null);setPobParsed(null);setPobOverrides({});}}>重新貼上</button><button className="primary" onClick={createFromPob}>建立攻略</button></div>
