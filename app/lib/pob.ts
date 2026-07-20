@@ -23,12 +23,21 @@ export type DraftGuide = {
 export type DecodeSummary = {
   trees: number; skillSets: number; itemSets: number; gemPlacements: number; unassigned: number;
 };
-export type DecodeResult = { guide: DraftGuide; summary: DecodeSummary };
+// One PoB configuration (skill/item/tree set) and where it landed. `assigned`
+// is false when no rule matched and it fell back — the UI flags these so the
+// user can place them instead of the tool silently guessing wrong.
+export type PobSet = {
+  key: string; kind: "skill" | "item" | "tree"; name: string; stage: string; assigned: boolean;
+};
+export type DecodeResult = { guide: DraftGuide; summary: DecodeSummary; sets: PobSet[] };
 
 type ParsedGroup = { slot: string; label: string; gems: string[] };
 type ParsedSkillSet = { name: string; stage: string; groups: ParsedGroup[] };
 type ParsedItemSet = { name: string; stage: string; slots: { slot: string; item: string }[] };
 type ParsedTree = { name: string; stage: string; nodeCount: number };
+export type ParsedPob = {
+  archetype: string; trees: ParsedTree[]; skills: ParsedSkillSet[]; items: ParsedItemSet[]; notes: string;
+};
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const attr = (el: Element, name: string) => el.getAttribute(name) || "";
@@ -96,33 +105,47 @@ export function parsePobXml(xml: string) {
   return { archetype, trees, skills, items, notes };
 }
 
-/** Decode a PoB export code straight into an importable draft guide. */
-export async function decodePobToGuide(
-  code: string,
-  meta: { title?: string; source?: string; version?: string } = {},
-): Promise<DecodeResult> {
-  const xml = await inflatePob(code);
-  const parsed = parsePobXml(xml);
+/** Inflate + parse a PoB code once. Cheap to re-`buildGuide` from the result. */
+export async function decodePob(code: string): Promise<ParsedPob> {
+  return parsePobXml(await inflatePob(code));
+}
 
+type BuildMeta = { title?: string; source?: string; version?: string };
+
+/**
+ * Assemble a draft guide from parsed PoB data. `overrides` maps a set key
+ * (`${kind}:${name}`) to a stage id, letting the caller correct any set the
+ * heuristic couldn't place (or placed wrong) before the guide is built.
+ */
+export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: Record<string, string> = {}): DecodeResult {
   const stages: DraftStage[] = STAGE_IDS.map((id, i) => ({
     id, name: STAGE_NAMES[i], summary: "", skills: [], gear: [], progression: [], notes: "",
   }));
   const stageOf = (id: string) => stages.find(s => s.id === id) || stages[2]; // fallback: 初入輿圖
-  const fallback = (s: string) => s || "maps";
+  const sets: PobSet[] = [];
   let unassigned = 0;
   let gemPlacements = 0;
+
+  // Resolve a set's stage: explicit override > inferred > fallback (flagged).
+  const place = (kind: PobSet["kind"], name: string, inferred: string): string => {
+    const key = `${kind}:${name}`;
+    const chosen = overrides[key] || inferred;
+    const assigned = Boolean(overrides[key] || inferred);
+    if (!assigned) unassigned++;
+    const stage = chosen || "maps";
+    sets.push({ key, kind, name, stage, assigned });
+    return stage;
+  };
 
   // Author's PoB Notes → overview stage (verbatim, only stripped of colour codes).
   stages[0].notes = parsed.notes;
 
   for (const t of parsed.trees) {
-    if (!t.stage) unassigned++;
-    stageOf(fallback(t.stage)).progression.push({ type: "passive", name: t.name, detail: `${t.nodeCount} 點配置` });
+    stageOf(place("tree", t.name, t.stage)).progression.push({ type: "passive", name: t.name, detail: `${t.nodeCount} 點配置` });
   }
 
   for (const set of parsed.skills) {
-    if (!set.stage) unassigned++;
-    const target = stageOf(fallback(set.stage));
+    const target = stageOf(place("skill", set.name, set.stage));
     for (const g of set.groups) {
       gemPlacements += g.gems.length;
       const label = [set.name, g.label].filter(Boolean).join(" · ");
@@ -132,8 +155,7 @@ export async function decodePobToGuide(
   }
 
   for (const set of parsed.items) {
-    if (!set.stage) unassigned++;
-    const target = stageOf(fallback(set.stage));
+    const target = stageOf(place("item", set.name, set.stage));
     for (const sl of set.slots) {
       target.gear.push({ slot: sl.slot, current: sl.item, next: "", note: set.name });
     }
@@ -145,7 +167,7 @@ export async function decodePobToGuide(
     version: meta.version?.trim() || "",
     archetype: parsed.archetype,
     updated: new Date().toISOString().slice(0, 10),
-    pob: code.trim(),
+    pob: "",
     source: meta.source?.trim() || "PoB 匯入",
     stages,
   };
@@ -153,11 +175,16 @@ export async function decodePobToGuide(
   return {
     guide,
     summary: {
-      trees: parsed.trees.length,
-      skillSets: parsed.skills.length,
-      itemSets: parsed.items.length,
-      gemPlacements,
-      unassigned,
+      trees: parsed.trees.length, skillSets: parsed.skills.length, itemSets: parsed.items.length,
+      gemPlacements, unassigned,
     },
+    sets,
   };
+}
+
+/** Decode a PoB export code straight into an importable draft guide. */
+export async function decodePobToGuide(code: string, meta: BuildMeta = {}): Promise<DecodeResult> {
+  const result = buildGuide(await decodePob(code), meta);
+  result.guide.pob = code.trim();
+  return result;
 }

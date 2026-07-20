@@ -2,7 +2,10 @@
 /* eslint-disable @next/next/no-img-element -- guide images are user-pasted data URLs */
 
 import { ChangeEvent, ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
-import { decodePobToGuide, type DecodeSummary } from "./lib/pob";
+import { decodePob, buildGuide, type DecodeResult, type ParsedPob } from "./lib/pob";
+
+const stageOptions: [string, string][] = [["overview", "總覽"], ["campaign", "劇情"], ["maps", "初入輿圖"], ["low", "低預算"], ["mid", "中預算"], ["high", "高預算"], ["end", "終局"]];
+const kindLabel = (k: string) => k === "skill" ? "技能" : k === "item" ? "裝備" : "天賦";
 
 type Skill = { name: string; color: "blue" | "red" | "green" };
 type ChecklistItem = { id: string; text: string; required?: boolean; unlockMessage?: string };
@@ -65,7 +68,9 @@ export default function Home() {
   const [pobSource, setPobSource] = useState("");
   const [pobBusy, setPobBusy] = useState(false);
   const [pobError, setPobError] = useState("");
-  const [pobDraft, setPobDraft] = useState<{ guide: Guide; summary: DecodeSummary } | null>(null);
+  const [pobParsed, setPobParsed] = useState<ParsedPob | null>(null);
+  const [pobOverrides, setPobOverrides] = useState<Record<string, string>>({});
+  const [pobResult, setPobResult] = useState<DecodeResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect -- hydrate a device-local vault after mount */
@@ -120,22 +125,31 @@ export default function Home() {
     else result = [...guides, ...pendingImport.map(g => guides.some(old => old.id === g.id) ? { ...g, id: `${g.id}-${uid()}` } : g)];
     setGuides(result); setGuideId(result[0].id); setStageId(result[0].stages[0].id); setPendingImport(null);
   };
-  const openPobImport = () => { setPobCode(""); setPobTitle(""); setPobSource(""); setPobError(""); setPobDraft(null); setPobOpen(true); };
+  const openPobImport = () => { setPobCode(""); setPobTitle(""); setPobSource(""); setPobError(""); setPobParsed(null); setPobOverrides({}); setPobResult(null); setPobOpen(true); };
   const runPobDecode = async () => {
-    setPobBusy(true); setPobError(""); setPobDraft(null);
+    setPobBusy(true); setPobError(""); setPobResult(null); setPobParsed(null); setPobOverrides({});
     try {
-      const { guide, summary } = await decodePobToGuide(pobCode, { title: pobTitle, source: pobSource });
-      setPobDraft({ guide: normalizeGuide(guide as unknown as Guide), summary });
+      const parsed = await decodePob(pobCode);
+      setPobParsed(parsed);
+      setPobResult(buildGuide(parsed, { title: pobTitle, source: pobSource }));
     } catch (err) {
       const code = err instanceof Error ? err.message : "";
       setPobError(code === "EMPTY" ? "請先貼上 PoB 匯出代碼。" : code === "NOT_POB" ? "這段代碼不是有效的 PoB 匯出（無法解出 Path of Building 內容）。" : code === "BAD_XML" ? "PoB 內容解析失敗，代碼可能不完整。" : "解碼失敗：請確認貼上的是完整的 PoB 匯出代碼（不是 pobb.in 網址）。");
     } finally { setPobBusy(false); }
   };
+  // Reassign every set with this name (skill/item/tree share it) to one stage, then rebuild.
+  const reassignSet = (name: string, stage: string) => {
+    if (!pobParsed) return;
+    const next = { ...pobOverrides };
+    for (const kind of ["skill", "item", "tree"]) { if (stage) next[`${kind}:${name}`] = stage; else delete next[`${kind}:${name}`]; }
+    setPobOverrides(next);
+    setPobResult(buildGuide(pobParsed, { title: pobTitle, source: pobSource }, next));
+  };
   const createFromPob = () => {
-    if (!pobDraft) return;
-    const guide = pobDraft.guide;
+    if (!pobResult) return;
+    const guide = normalizeGuide({ ...pobResult.guide, pob: pobCode.trim() } as unknown as Guide);
     setGuides(gs => [...gs, guide]); setGuideId(guide.id); setStageId(guide.stages[0].id);
-    setPobOpen(false); setPobDraft(null); setShowLibrary(false);
+    setPobOpen(false); setPobResult(null); setPobParsed(null); setShowLibrary(false);
   };
   const newGuide = () => {
     const id = uid(); const fresh: Guide = { id, title:"未命名攻略", version:"3.29", archetype:"尚未設定流派", updated:new Date().toISOString().slice(0,10), pob:"", source:"", pros:[], cons:[], coreMechanics:[], requiredItems:[], recommendedItems:[], variants:[], stages:stageNames.map(emptyStage) };
@@ -150,6 +164,8 @@ export default function Home() {
 
   if (!guide || !stage) return null;
   const stageIndex = guide.stages.findIndex(s => s.id === stage.id);
+  // Sets the heuristic couldn't place, de-duplicated by name (skill/item/tree share a name).
+  const pobFlagged = pobResult ? Array.from(new Map(pobResult.sets.filter(s => !s.assigned).map(s => [s.name, s])).values()) : [];
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -238,18 +254,23 @@ export default function Home() {
       {showLibrary && <div className="modal-backdrop" onMouseDown={()=>setShowLibrary(false)}><section className="modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><small>MY BUILD LIBRARY</small><h2>選擇攻略</h2></div><button onClick={()=>setShowLibrary(false)}>×</button></div><div className="guide-grid">{guides.map(g=><div className="guide-card" key={g.id}><button className="guide-open" onClick={()=>{setGuideId(g.id);setStageId(g.stages[0].id);setShowLibrary(false)}}><span className="guide-version">{g.version}</span><strong>{g.title}</strong><small>{g.archetype}</small><i>{g.stages.length} 個階段</i></button><div className="guide-actions"><button onClick={()=>duplicateGuide(g)}>複製</button><button className="danger" onClick={()=>deleteGuide(g.id)}>刪除</button></div></div>)}<button className="add-card" onClick={newGuide}><strong>＋</strong><span>建立空白攻略</span></button></div></section></div>}
       {pendingImport && <div className="modal-backdrop"><section className="modal import-modal"><div className="modal-head"><div><small>IMPORT GUIDES</small><h2>匯入 {pendingImport.length} 份攻略</h2></div><button onClick={()=>setPendingImport(null)}>×</button></div><p>選擇如何處理目前攻略庫。建議一般新增流派使用「新增」，更新既有攻略使用「依 ID 合併」。</p><div className="import-options"><button onClick={()=>applyImport("add")}><strong>新增攻略</strong><span>保留全部現有攻略；重複 ID 會建立副本。</span></button><button onClick={()=>applyImport("merge")}><strong>依 ID 合併</strong><span>同 ID 更新，不同 ID 新增。</span></button><button className="danger-zone" onClick={()=>confirm("確定以匯入檔取代全部現有攻略？")&&applyImport("replace")}><strong>取代全部</strong><span>刪除現有攻略並完全採用匯入檔。</span></button></div></section></div>}
       {pobOpen && <div className="modal-backdrop" onMouseDown={()=>!pobBusy&&setPobOpen(false)}><section className="modal pob-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><small>IMPORT FROM POB</small><h2>從 PoB 代碼匯入</h2></div><button onClick={()=>setPobOpen(false)}>×</button></div>
-        {!pobDraft ? <div className="pob-form">
+        {!pobResult ? <div className="pob-form">
           <p className="pob-hint">貼上 Path of Building 的<b>匯出代碼</b>（Import/Export → Generate；或 pobb.in 頁面上的 raw 代碼）。技能、裝備、天賦會被精確解碼並依階段分好，不需要 LLM。</p>
           <textarea className="pob-code" value={pobCode} placeholder="在此貼上 PoB 匯出代碼…" onChange={e=>setPobCode(e.target.value)} spellCheck={false}/>
           <div className="pob-meta"><label>攻略標題（選填）<input value={pobTitle} placeholder="例：毒食腐魔像＋殭屍" onChange={e=>setPobTitle(e.target.value)}/></label><label>來源（選填）<input value={pobSource} placeholder="例：Maxroll / 作者名" onChange={e=>setPobSource(e.target.value)}/></label></div>
           {pobError && <p className="pob-error">{pobError}</p>}
           <div className="pob-actions"><button className="primary" disabled={pobBusy||!pobCode.trim()} onClick={runPobDecode}>{pobBusy?"解碼中…":"解析代碼"}</button></div>
         </div> : <div className="pob-summary">
-          <div className="pob-stats"><span><b>{pobDraft.summary.skillSets}</b>技能組</span><span><b>{pobDraft.summary.itemSets}</b>裝備組</span><span><b>{pobDraft.summary.trees}</b>天賦樹</span><span><b>{pobDraft.summary.gemPlacements}</b>寶石擺放</span></div>
-          <p className="pob-title-preview">將建立：<b>{pobDraft.guide.title}</b>{pobDraft.guide.archetype && <span>（{pobDraft.guide.archetype}）</span>}</p>
-          {pobDraft.summary.unassigned>0 && <p className="pob-warn">⚠ 有 {pobDraft.summary.unassigned} 組配置無法自動判斷階段，已暫放「初入輿圖」，可進入編輯模式手動調整。</p>}
+          <div className="pob-stats"><span><b>{pobResult.summary.skillSets}</b>技能組</span><span><b>{pobResult.summary.itemSets}</b>裝備組</span><span><b>{pobResult.summary.trees}</b>天賦樹</span><span><b>{pobResult.summary.gemPlacements}</b>寶石擺放</span></div>
+          <p className="pob-title-preview">將建立：<b>{pobResult.guide.title}</b>{pobResult.guide.archetype && <span>（{pobResult.guide.archetype}）</span>}</p>
+          {pobFlagged.length>0 ? <div className="pob-flags"><p className="pob-warn">⚠ 有 {pobFlagged.length} 套配置無法自動判斷階段，請指定（留空＝暫放初入輿圖）：</p>
+            {pobFlagged.map(s=><div className="pob-flag-row" key={s.name}><span className="pob-kind">{kindLabel(s.kind)}</span><span className="pob-setname">{s.name}</span><select value={pobOverrides[`${s.kind}:${s.name}`]||""} onChange={e=>reassignSet(s.name,e.target.value)}><option value="">未指定</option>{stageOptions.map(([id,nm])=><option key={id} value={id}>{nm}</option>)}</select></div>)}
+          </div> : <p className="pob-ok">✓ 所有配置都已自動判斷階段。</p>}
+          <details className="pob-map"><summary>檢視全部階段對應（{pobResult.sets.length} 套配置）</summary>
+            {stageOptions.map(([id,nm])=>{const inS=pobResult.sets.filter(x=>x.stage===id); return inS.length?<div className="pob-map-row" key={id}><b>{nm}</b><div>{inS.map(x=><span key={x.key} className={x.assigned?"pob-chip":"pob-chip flag"}>{kindLabel(x.kind)}·{x.name}</span>)}</div></div>:null;})}
+          </details>
           <p className="pob-note">解碼內容 100% 來自 PoB，未翻譯的英文可於編輯模式或後續翻譯步驟處理。</p>
-          <div className="pob-actions"><button className="ghost" onClick={()=>setPobDraft(null)}>重新貼上</button><button className="primary" onClick={createFromPob}>建立攻略</button></div>
+          <div className="pob-actions"><button className="ghost" onClick={()=>{setPobResult(null);setPobParsed(null);setPobOverrides({});}}>重新貼上</button><button className="primary" onClick={createFromPob}>建立攻略</button></div>
         </div>}
       </section></div>}
     </main>
