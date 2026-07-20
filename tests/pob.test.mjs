@@ -27,6 +27,12 @@ test("inferStageId maps PoB set titles to the seven stages", () => {
   assert.equal(inferStageId("^1Mid lvl 96 {5}"), "mid");
   assert.equal(inferStageId("^6Late lvl 98 {7}"), "end");
   assert.equal(inferStageId("^6Late upgraded Option 1 {9}"), "end");
+  // The tier WORD wins over the build-specific "{n}" number: a set titled
+  // "Early ... {9}" is early-maps, never endgame (regression from real builds
+  // where the same author's {n} tags mean different tiers per build).
+  assert.equal(inferStageId("^4Early Covenant {9}"), "maps");
+  assert.equal(inferStageId("^1Early Covenant Blood Magic {3}"), "maps");
+  assert.equal(inferStageId("^6Late lvl 100 Svalinn {8}"), "end");
   assert.equal(inferStageId("empty"), "");
 });
 
