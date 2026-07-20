@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- guide images are user-pasted data URLs */
 
 import { ChangeEvent, ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
-import { decodePob, buildGuide, type DecodeResult, type ParsedPob } from "./lib/pob";
+import { decodePob, buildGuide, translateGuide, type DecodeResult, type ParsedPob, type Glossary } from "./lib/pob";
 
 const stageOptions: [string, string][] = [["overview", "總覽"], ["campaign", "劇情"], ["maps", "初入輿圖"], ["low", "低預算"], ["mid", "中預算"], ["high", "高預算"], ["end", "終局"]];
 const kindLabel = (k: string) => k === "skill" ? "技能" : k === "item" ? "裝備" : "天賦";
@@ -71,7 +71,9 @@ export default function Home() {
   const [pobParsed, setPobParsed] = useState<ParsedPob | null>(null);
   const [pobOverrides, setPobOverrides] = useState<Record<string, string>>({});
   const [pobResult, setPobResult] = useState<DecodeResult | null>(null);
+  const [glossary, setGlossary] = useState<Glossary | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const glossaryRef = useRef<HTMLInputElement>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect -- hydrate a device-local vault after mount */
   useEffect(() => {
@@ -84,6 +86,8 @@ export default function Home() {
       if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length) { const normalized = parsed.map(normalizeGuide); setGuides(normalized); setGuideId(normalized[0].id); setStageId(normalized[0].stages[0].id); } }
       if (progress) setChecked(JSON.parse(progress));
       if (variants) setSelectedVariants(JSON.parse(variants));
+      const gloss = localStorage.getItem("poe-glossary");
+      if (gloss) setGlossary(JSON.parse(gloss));
     } catch { /* keep starter data */ }
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -145,9 +149,28 @@ export default function Home() {
     setPobOverrides(next);
     setPobResult(buildGuide(pobParsed, { title: pobTitle, source: pobSource }, next));
   };
+  const loadGlossary = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const raw = JSON.parse(String(reader.result));
+        const gl: Glossary = { gems: raw.gems || {}, uniques: raw.uniques || {}, itemBases: raw.itemBases, spectres: raw.spectres };
+        if (!Object.keys(gl.gems).length) throw new Error();
+        setGlossary(gl);
+        try { localStorage.setItem("poe-glossary", JSON.stringify(gl)); } catch { /* quota: keep in memory only */ }
+      } catch { alert("無法讀取：這不是有效的 glossary.json（需包含 gems 對照表）。"); }
+    };
+    reader.readAsText(file); e.target.value = "";
+  };
+  const glossaryCount = glossary ? Object.keys(glossary.gems).length + Object.keys(glossary.uniques).length : 0;
   const createFromPob = () => {
-    if (!pobResult) return;
-    const guide = normalizeGuide({ ...pobResult.guide, pob: pobCode.trim() } as unknown as Guide);
+    if (!pobParsed) return;
+    // Rebuild simplified (one full layout per stage) with the confirmed stage mapping,
+    // then apply the local glossary if loaded. All deterministic — no LLM here.
+    const built = buildGuide(pobParsed, { title: pobTitle, source: pobSource }, pobOverrides, { simplify: true });
+    if (glossary) translateGuide(built.guide, glossary);
+    const guide = normalizeGuide({ ...built.guide, pob: pobCode.trim() } as unknown as Guide);
     setGuides(gs => [...gs, guide]); setGuideId(guide.id); setStageId(guide.stages[0].id);
     setPobOpen(false); setPobResult(null); setPobParsed(null); setShowLibrary(false);
   };
@@ -255,7 +278,13 @@ export default function Home() {
       {pendingImport && <div className="modal-backdrop"><section className="modal import-modal"><div className="modal-head"><div><small>IMPORT GUIDES</small><h2>匯入 {pendingImport.length} 份攻略</h2></div><button onClick={()=>setPendingImport(null)}>×</button></div><p>選擇如何處理目前攻略庫。建議一般新增流派使用「新增」，更新既有攻略使用「依 ID 合併」。</p><div className="import-options"><button onClick={()=>applyImport("add")}><strong>新增攻略</strong><span>保留全部現有攻略；重複 ID 會建立副本。</span></button><button onClick={()=>applyImport("merge")}><strong>依 ID 合併</strong><span>同 ID 更新，不同 ID 新增。</span></button><button className="danger-zone" onClick={()=>confirm("確定以匯入檔取代全部現有攻略？")&&applyImport("replace")}><strong>取代全部</strong><span>刪除現有攻略並完全採用匯入檔。</span></button></div></section></div>}
       {pobOpen && <div className="modal-backdrop" onMouseDown={()=>!pobBusy&&setPobOpen(false)}><section className="modal pob-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><small>IMPORT FROM POB</small><h2>從 PoB 代碼匯入</h2></div><button onClick={()=>setPobOpen(false)}>×</button></div>
         {!pobResult ? <div className="pob-form">
-          <p className="pob-hint">貼上 Path of Building 的<b>匯出代碼</b>（Import/Export → Generate；或 pobb.in 頁面上的 raw 代碼）。技能、裝備、天賦會被精確解碼並依階段分好，不需要 LLM。</p>
+          <p className="pob-hint">貼上 Path of Building 的<b>匯出代碼</b>（Import/Export → Generate；或 pobb.in 頁面上的 raw 代碼）。技能、裝備、天賦會被精確解碼、化簡並依階段分好，不需要 LLM。</p>
+          <div className="pob-glossary">
+            {glossary ? <span className="pob-gloss-ok">✓ 詞庫已載入（{glossaryCount.toLocaleString()} 條）· 建立時自動翻譯成繁中</span>
+                      : <span className="pob-gloss-no">未載入詞庫 · 建立的攻略會保留英文寶石／裝備名</span>}
+            <button className="ghost-sm" onClick={()=>glossaryRef.current?.click()}>{glossary ? "重新載入" : "載入詞庫 glossary.json"}</button>
+            <input ref={glossaryRef} type="file" accept="application/json,.json" hidden onChange={loadGlossary}/>
+          </div>
           <textarea className="pob-code" value={pobCode} placeholder="在此貼上 PoB 匯出代碼…" onChange={e=>setPobCode(e.target.value)} spellCheck={false}/>
           <div className="pob-meta"><label>攻略標題（選填）<input value={pobTitle} placeholder="例：毒食腐魔像＋殭屍" onChange={e=>setPobTitle(e.target.value)}/></label><label>來源（選填）<input value={pobSource} placeholder="例：Maxroll / 作者名" onChange={e=>setPobSource(e.target.value)}/></label></div>
           {pobError && <p className="pob-error">{pobError}</p>}
@@ -269,7 +298,7 @@ export default function Home() {
           <details className="pob-map"><summary>檢視全部階段對應（{pobResult.sets.length} 套配置）</summary>
             {stageOptions.map(([id,nm])=>{const inS=pobResult.sets.filter(x=>x.stage===id); return inS.length?<div className="pob-map-row" key={id}><b>{nm}</b><div>{inS.map(x=><span key={x.key} className={x.assigned?"pob-chip":"pob-chip flag"}>{kindLabel(x.kind)}·{x.name}</span>)}</div></div>:null;})}
           </details>
-          <p className="pob-note">解碼內容 100% 來自 PoB，未翻譯的英文可於編輯模式或後續翻譯步驟處理。</p>
+          <p className="pob-note">建立時會<b>化簡</b>為每階一套完整佈局{glossary ? <>，並用詞庫<b>翻譯成繁中</b></> : <>（未載入詞庫 → 保留英文）</>}。解碼內容 100% 來自 PoB。</p>
           <div className="pob-actions"><button className="ghost" onClick={()=>{setPobResult(null);setPobParsed(null);setPobOverrides({});}}>重新貼上</button><button className="primary" onClick={createFromPob}>建立攻略</button></div>
         </div>}
       </section></div>}
