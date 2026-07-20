@@ -114,10 +114,13 @@ export default function Home() {
   const activeVariant = selectedVariants[guide.id] || "";
   const applies = (variantIds?: string[]) => !variantIds?.length || !activeVariant || variantIds.includes(activeVariant);
 
-  const exportData = () => {
-    const blob = new Blob([JSON.stringify({ format:"poe-guide-v3", guides }, null, 2)], { type:"application/json" });
-    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `poe-guides-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url);
+  const downloadGuides = (list: Guide[], filename: string) => {
+    const blob = new Blob([JSON.stringify({ format:"poe-guide-v3", guides: list }, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
   };
+  const today = () => new Date().toISOString().slice(0, 10);
+  const exportOne = (g: Guide) => downloadGuides([g], `poe-guide-${g.id}-${today()}.json`);
+  const exportAll = () => downloadGuides(guides, `poe-guides-all-${today()}.json`);
   const importData = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader(); reader.onload = () => { try { const raw = JSON.parse(String(reader.result)); const next = Array.isArray(raw) ? raw : raw.guides; if (!Array.isArray(next) || !next.length || next.some((g: Guide) => !g.id || !g.title || !Array.isArray(g.stages))) throw new Error(); setPendingImport(next.map(normalizeGuide)); } catch { alert("無法讀取：檔案不是有效的攻略庫 JSON。"); } }; reader.readAsText(file); e.target.value = "";
@@ -220,7 +223,7 @@ export default function Home() {
         <div className="top-actions">
           <button className="ghost" onClick={openPobImport}>貼 PoB</button>
           <button className="ghost" onClick={() => fileRef.current?.click()}>匯入</button><input ref={fileRef} type="file" accept="application/json" hidden onChange={importData}/>
-          <button className="ghost" onClick={exportData}>匯出</button>
+          <button className="ghost" onClick={()=>exportOne(guide)} title="匯出目前這份攻略（給 LLM 精修用）">匯出</button>
           <button className={editing ? "primary active" : "primary"} onClick={() => setEditing(v => !v)}>{editing ? "完成編輯" : "編輯模式"}</button>
         </div>
       </header>
@@ -299,7 +302,7 @@ export default function Home() {
         </div>
       </section>
 
-      {showLibrary && <div className="modal-backdrop" onMouseDown={()=>setShowLibrary(false)}><section className="modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><small>MY BUILD LIBRARY</small><h2>選擇攻略</h2></div><button onClick={()=>setShowLibrary(false)}>×</button></div><div className="guide-grid">{guides.map(g=><div className="guide-card" key={g.id}><button className="guide-open" onClick={()=>{setGuideId(g.id);setStageId(g.stages[0].id);setShowLibrary(false)}}><span className="guide-version">{g.version}</span><strong>{g.title}</strong><small>{g.archetype}</small><i>{g.stages.length} 個階段</i></button><div className="guide-actions"><button onClick={()=>duplicateGuide(g)}>複製</button><button className="danger" onClick={()=>deleteGuide(g.id)}>刪除</button></div></div>)}<button className="add-card" onClick={newGuide}><strong>＋</strong><span>建立空白攻略</span></button></div></section></div>}
+      {showLibrary && <div className="modal-backdrop" onMouseDown={()=>setShowLibrary(false)}><section className="modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><small>MY BUILD LIBRARY</small><h2>選擇攻略</h2></div><div className="modal-head-actions"><button className="ghost-sm" onClick={exportAll} title="把整個攻略庫匯出成一個備份檔">匯出全部備份</button><button onClick={()=>setShowLibrary(false)}>×</button></div></div><div className="guide-grid">{guides.map(g=><div className="guide-card" key={g.id}><button className="guide-open" onClick={()=>{setGuideId(g.id);setStageId(g.stages[0].id);setShowLibrary(false)}}><span className="guide-version">{g.version}</span><strong>{g.title}</strong><small>{g.archetype}</small><i>{g.stages.length} 個階段</i></button><div className="guide-actions"><button onClick={()=>exportOne(g)}>匯出</button><button onClick={()=>duplicateGuide(g)}>複製</button><button className="danger" onClick={()=>deleteGuide(g.id)}>刪除</button></div></div>)}<button className="add-card" onClick={newGuide}><strong>＋</strong><span>建立空白攻略</span></button></div></section></div>}
       {pendingImport && <div className="modal-backdrop"><section className="modal import-modal"><div className="modal-head"><div><small>IMPORT GUIDES</small><h2>匯入 {pendingImport.length} 份攻略</h2></div><button onClick={()=>setPendingImport(null)}>×</button></div><p>選擇如何處理目前攻略庫。建議一般新增流派使用「新增」，更新既有攻略使用「依 ID 合併」。</p><div className="import-options"><button onClick={()=>applyImport("add")}><strong>新增攻略</strong><span>保留全部現有攻略；重複 ID 會建立副本。</span></button><button onClick={()=>applyImport("merge")}><strong>依 ID 合併</strong><span>同 ID 更新，不同 ID 新增。</span></button><button className="danger-zone" onClick={()=>confirm("確定以匯入檔取代全部現有攻略？")&&applyImport("replace")}><strong>取代全部</strong><span>刪除現有攻略並完全採用匯入檔。</span></button></div></section></div>}
       {pobOpen && <div className="modal-backdrop" onMouseDown={()=>!pobBusy&&setPobOpen(false)}><section className="modal pob-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><small>IMPORT FROM POB</small><h2>從 PoB 代碼匯入</h2></div><button onClick={()=>setPobOpen(false)}>×</button></div>
         {!pobResult ? <div className="pob-form">
