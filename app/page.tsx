@@ -164,6 +164,7 @@ export default function Home() {
     reader.readAsText(file); e.target.value = "";
   };
   const glossaryCount = glossary ? Object.keys(glossary.gems).length + Object.keys(glossary.uniques).length : 0;
+  const glossaryColors = glossary?.gemColors ? Object.keys(glossary.gemColors).length : 0;
   const createFromPob = () => {
     if (!pobParsed) return;
     // Rebuild simplified (one full layout per stage) with the confirmed stage mapping,
@@ -283,7 +284,7 @@ export default function Home() {
         {!pobResult ? <div className="pob-form">
           <p className="pob-hint">貼上 Path of Building 的<b>匯出代碼</b>（Import/Export → Generate；或 pobb.in 頁面上的 raw 代碼）。技能、裝備、天賦會被精確解碼、化簡並依階段分好，不需要 LLM。</p>
           <div className="pob-glossary">
-            {glossary ? <span className="pob-gloss-ok">✓ 詞庫已載入（{glossaryCount.toLocaleString()} 條）· 建立時自動翻譯成繁中</span>
+            {glossary ? <span className="pob-gloss-ok">✓ 詞庫已載入（{glossaryCount.toLocaleString()} 條）· {glossaryColors ? `含寶石顏色 ${glossaryColors}` : <span className="pob-gloss-no">無寶石顏色，請重載新版 glossary.json</span>} · 建立時自動翻譯上色</span>
                       : <span className="pob-gloss-no">未載入詞庫 · 建立的攻略會保留英文寶石／裝備名</span>}
             <button className="ghost-sm" onClick={()=>glossaryRef.current?.click()}>{glossary ? "重新載入" : "載入詞庫 glossary.json"}</button>
             <input ref={glossaryRef} type="file" accept="application/json,.json" hidden onChange={loadGlossary}/>
