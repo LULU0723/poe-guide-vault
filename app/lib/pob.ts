@@ -199,29 +199,40 @@ export function buildGuide(parsed: ParsedPob, meta: BuildMeta = {}, overrides: R
 /** A user-loaded glossary of official Traditional-Chinese PoE terms. */
 export type Glossary = {
   gems: Record<string, string>;
+  gemColors?: Record<string, string>;   // English gem name → "red" | "green" | "blue"
   uniques: Record<string, string>;
   itemBases?: Record<string, string>;
   spectres?: Record<string, string>;
 };
 
 const GEM_PREFIXES = ["Awakened ", "Vaal ", "Greater ", "Lesser "];
-function trGem(n: string, gems: Record<string, string>, miss: Set<string>): string {
-  if (gems[n]) return gems[n];
-  const base = n.replace(/ of .+$/, "");        // transfigured "X of Y" → "X"
-  if (base !== n && gems[base]) return gems[base];
-  for (const p of GEM_PREFIXES) if (n.startsWith(p) && gems[n.slice(p.length)]) return gems[n.slice(p.length)];
-  miss.add(n);
-  return n;                                       // unknown: keep English, flag
+// Look up a value for a gem by name, tolerating transfigured "X of Y" and prefixed variants.
+function gemLookup<T>(n: string, table: Record<string, T> | undefined): T | undefined {
+  if (!table) return undefined;
+  if (table[n] !== undefined) return table[n];
+  const base = n.replace(/ of .+$/, "");
+  if (base !== n && table[base] !== undefined) return table[base];
+  for (const p of GEM_PREFIXES) if (n.startsWith(p) && table[n.slice(p.length)] !== undefined) return table[n.slice(p.length)];
+  return undefined;
 }
 function trItem(n: string, gl: Glossary): string {
   return gl.uniques[n] || gl.itemBases?.[n] || n; // author labels (not in glossary) stay as-is
 }
 
-/** Translate gem/item names in a draft guide in place. Unknown gems are flagged. */
+/**
+ * Apply the glossary in place: set each gem's socket colour from its attribute
+ * requirement and translate gem/item names to official zh-TW. Unknown gems keep
+ * their English name and are flagged.
+ */
 export function translateGuide(guide: DraftGuide, gl: Glossary): { guide: DraftGuide; missing: string[] } {
   const miss = new Set<string>();
   for (const s of guide.stages) {
-    for (const grp of s.skills) for (const gem of grp.gems) gem.name = trGem(gem.name, gl.gems, miss);
+    for (const grp of s.skills) for (const gem of grp.gems) {
+      const c = gemLookup(gem.name, gl.gemColors);
+      if (c === "red" || c === "green" || c === "blue") gem.color = c;
+      const zh = gemLookup(gem.name, gl.gems);
+      if (zh === undefined) miss.add(gem.name); else gem.name = zh;
+    }
     for (const g of s.gear) { g.current = trItem(g.current, gl); if (g.next) g.next = trItem(g.next, gl); }
   }
   return { guide, missing: [...miss] };
