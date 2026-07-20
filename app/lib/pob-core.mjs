@@ -47,13 +47,15 @@ export function stripPobColors(s) {
 export function inferStageId(rawTitle) {
   const t = stripPobColors(rawTitle).toLowerCase();
   if (!t) return "";
+  // Trust the descriptive tier WORD only. Authors' "{n}" set numbers are
+  // build-specific and mean different tiers in different builds (even from the
+  // same author), so they must never drive staging — a set literally titled
+  // "Early ... {9}" is early, not endgame. Anything without a clear word stays
+  // unassigned so the caller can flag it instead of silently guessing wrong.
   if (/\b(summary|overview)\b/.test(t)) return "overview";
-  // Campaign: explicit leveling trees / act-based skill sets (but not the lvl 80+ respec).
-  if ((/lvling|leveling|campaign/.test(t) || /\bact\b/.test(t)) && !/lvl\s*(8|9|100)/.test(t)) return "campaign";
-  if (/\bact\b/.test(t)) return "campaign";
-  // Endgame first so "Late" wins over any incidental substrings.
-  if (/\blate\b|upgraded|flesh and flame|option [12]\b|\{[6789]\}/.test(t)) return "end";
-  if (/\bmid\b|bitter heresy|doctrine|\{[35]\}/.test(t)) return "mid";
-  if (/\bearly\b|pre-early|da anoint|\{[12]\}/.test(t)) return "maps";
+  if (/\bearly\b|pre-early|da anoint/.test(t)) return "maps";
+  if (/\bmid\b|bitter heresy|doctrine/.test(t)) return "mid";
+  if (/\blate\b|upgraded|flesh and flame|svalinn|option [12]\b/.test(t)) return "end";
+  if (/lvling|leveling|campaign/.test(t) || /\bact\b/.test(t)) return "campaign";
   return "";
 }
